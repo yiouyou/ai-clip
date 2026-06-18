@@ -9,7 +9,7 @@ from rich.console import Console
 
 from ai_clip.core.config import load_config
 from ai_clip.produce.assemble import MissingAssetsError, check_assets
-from ai_clip.core.models import Storyboard
+from ai_clip.core.models import Storyboard, VideoFormat
 from ai_clip.core.paths import ProjectPaths, read_model
 from ai_clip import pipeline
 
@@ -66,18 +66,23 @@ def analyze(
 def storyboard(
     project: str = typer.Option(..., "--project", "-p"),
     theme: str = typer.Option(..., "--theme"),
+    fmt: VideoFormat = typer.Option(VideoFormat.talking_head, "--format", "-f"),
     duration: float = typer.Option(30.0, "--duration"),
     shots: int = typer.Option(6, "--shots"),
     config: str = typer.Option(None, "--config"),
 ):
-    """Generate shot-by-shot prompts. Then create assets and run `assemble`."""
-    sb = pipeline.run_storyboard(_cfg(config), project, theme, duration, shots)
-    pp = ProjectPaths(_cfg(config).data_dir, project)
-    console.print(f"[green]storyboard[/] {len(sb.shots)} shots -> {pp.storyboard_md}")
-    console.print(
-        "[yellow]Next:[/] create each asset (即梦/Gemini/ComfyUI), save into "
-        f"{pp.assets_dir} using the filenames in storyboard.md, then `ai-clip assemble`."
-    )
+    """Generate a storyboard for the chosen format (talking_head|slideshow|remix|montage)."""
+    cfg = _cfg(config)
+    sb = pipeline.run_storyboard(cfg, project, theme, fmt, duration, shots)
+    pp = ProjectPaths(cfg.data_dir, project)
+    console.print(f"[green]storyboard[/] ({sb.format}) {len(sb.shots)} shots -> {pp.storyboard_md}")
+    if sb.format == VideoFormat.remix:
+        console.print("[yellow]Next:[/] `ai-clip voiceover` then `ai-clip assemble` (no manual assets).")
+    else:
+        console.print(
+            "[yellow]Next:[/] create assets (即梦/Gemini/ComfyUI) into "
+            f"{pp.assets_dir} per storyboard.md, then `ai-clip voiceover` + `ai-clip assemble`."
+        )
 
 
 @app.command()
@@ -126,30 +131,35 @@ def remix(
     url: str,
     theme: str = typer.Option(..., "--theme"),
     project: str = typer.Option(..., "--project", "-p"),
+    fmt: VideoFormat = typer.Option(VideoFormat.remix, "--format", "-f"),
     duration: float = typer.Option(30.0, "--duration"),
     shots: int = typer.Option(6, "--shots"),
     config: str = typer.Option(None, "--config"),
 ):
-    """Full 二创 flow: download -> extract -> analyze -> storyboard (then human + assemble)."""
+    """二创 flow: download -> extract -> analyze -> storyboard. Default format=remix."""
     cfg = _cfg(config)
     pipeline.run_download(cfg, project, url)
     pipeline.run_extract(cfg, project)
     pipeline.run_analyze(cfg, project)
-    pipeline.run_storyboard(cfg, project, theme, duration, shots)
-    console.print("[green]storyboard ready[/] — fill assets/, then `ai-clip assemble`.")
+    sb = pipeline.run_storyboard(cfg, project, theme, fmt, duration, shots)
+    console.print(f"[green]storyboard ready[/] ({sb.format}) — next: voiceover + assemble.")
 
 
 @app.command()
 def original(
     theme: str = typer.Option(..., "--theme"),
     project: str = typer.Option(..., "--project", "-p"),
+    fmt: VideoFormat = typer.Option(VideoFormat.talking_head, "--format", "-f"),
     duration: float = typer.Option(30.0, "--duration"),
     shots: int = typer.Option(6, "--shots"),
     config: str = typer.Option(None, "--config"),
 ):
-    """Original flow: storyboard from a theme only (no source clip)."""
-    pipeline.run_storyboard(_cfg(config), project, theme, duration, shots)
-    console.print("[green]storyboard ready[/] — fill assets/, then `ai-clip assemble`.")
+    """Original flow: storyboard from a theme only (no source clip). No remix format."""
+    if fmt == VideoFormat.remix:
+        console.print("[red]remix format needs a source clip; use `ai-clip remix`.[/]")
+        raise typer.Exit(1)
+    sb = pipeline.run_storyboard(_cfg(config), project, theme, fmt, duration, shots)
+    console.print(f"[green]storyboard ready[/] ({sb.format}) — next: voiceover + assemble.")
 
 
 if __name__ == "__main__":

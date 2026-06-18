@@ -61,10 +61,18 @@ class ViralAnalysis(BaseModel):
     notes: str = ""
 
 
+class VideoFormat(StrEnum):
+    talking_head = "talking_head"  # narration + optional b-roll stills
+    slideshow = "slideshow"  # image cards + on-screen captions + narration
+    remix = "remix"  # segments cut from the source clip + narration
+    montage = "montage"  # fully AI-generated multi-shot drama
+
+
 class Shot(BaseModel):
     """One storyboard shot. The filename fields are the contract that lets the
     assemble stage pick up assets regardless of how they were produced
-    (ComfyUI API, or a human downloading from a website)."""
+    (ComfyUI API, or a human downloading from a website). For `remix`, the shot
+    instead points at a [source_start, source_end] span of the source clip."""
 
     index: int
     duration_sec: float = 3.0
@@ -72,10 +80,19 @@ class Shot(BaseModel):
     image_prompt: str = ""
     video_prompt: str = ""
     voiceover: str = ""
+    caption: str = ""  # on-screen text (slideshow)
     image_file: str = ""
     video_file: str = ""
+    source_start: float | None = None  # remix: cut start in source clip (sec)
+    source_end: float | None = None  # remix: cut end in source clip (sec)
+
+    @property
+    def is_source_segment(self) -> bool:
+        return self.source_start is not None and self.source_end is not None
 
     def expected_files(self) -> list[str]:
+        if self.is_source_segment:
+            return []
         return [f for f in (self.image_file, self.video_file) if f]
 
 
@@ -83,6 +100,7 @@ class Storyboard(BaseModel):
     """Output of the storyboard step; input to the assemble step."""
 
     project: str
+    format: VideoFormat = VideoFormat.talking_head
     theme: str = ""
     source_clip_id: str | None = None
     aspect_ratio: str = "9:16"

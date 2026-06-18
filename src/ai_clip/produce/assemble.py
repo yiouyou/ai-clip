@@ -26,9 +26,12 @@ class MissingAssetsError(RuntimeError):
 
 
 def check_assets(sb: Storyboard, assets_dir: Path) -> list[str]:
-    """Return the list of shots that have neither a video nor an image asset."""
+    """Return the list of shots that have no usable input. Source-segment (remix)
+    shots are satisfied by the source clip, not files in assets/."""
     missing: list[str] = []
     for shot in sb.shots:
+        if shot.is_source_segment:
+            continue
         has_video = shot.video_file and (assets_dir / shot.video_file).exists()
         has_image = shot.image_file and (assets_dir / shot.image_file).exists()
         if not (has_video or has_image):
@@ -41,11 +44,16 @@ def assemble(
     assets_dir: Path,
     out_path: Path,
     voice_dir: Path | None = None,
+    source_video: Path | None = None,
 ) -> Path:
     ensure_ffmpeg()
     missing = check_assets(sb, assets_dir)
     if missing:
         raise MissingAssetsError(missing)
+    if any(s.is_source_segment for s in sb.shots) and not (
+        source_video and Path(source_video).exists()
+    ):
+        raise MissingAssetsError(["source video required for remix shots"])
 
     w, h = _RESOLUTIONS.get(sb.aspect_ratio, _RESOLUTIONS["9:16"])
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -53,7 +61,7 @@ def assemble(
     with tempfile.TemporaryDirectory() as tmp:
         tmpdir = Path(tmp)
         segments = [
-            _normalize_shot(shot, assets_dir, tmpdir, w, h, voice_dir)
+            _normalize_shot(shot, assets_dir, tmpdir, w, h, voice_dir, source_video)
             for shot in sb.shots
         ]
         concat_file = tmpdir / "concat.txt"
@@ -75,7 +83,13 @@ def _shot_duration(shot: Shot, voice_path: Path | None) -> float:
 
 
 def _normalize_shot(
-    shot: Shot, assets_dir: Path, tmpdir: Path, w: int, h: int, voice_dir: Path | None
+    shot: Shot,
+    assets_dir: Path,
+    tmpdir: Path,
+    w: int,
+    h: int,
+    voice_dir: Path | None,
+    source_video: Path | None = None,
 ) -> Path:
     seg = tmpdir / f"seg_{shot.index:02d}.mp4"
     vf = (
@@ -85,25 +99,33 @@ def _normalize_shot(
     voice_path = (voice_dir / f"shot_{shot.index:02d}.wav") if voice_dir else None
     duration = _shot_duration(shot, voice_path)
 
-    video = assets_dir / shot.video_file if shot.video_file else None
-    if video and video.exists():
-        args = ["ffmpeg", "-y", "-stream_loop", "-1", "-i", str(video)]
+    if shot.is_source_segment:
+        # Remix: cut the span out of the source clip.
+        args = [
+            "ffmpeg", "-y", "-ss", str(shot.source_start), "-to", str(shot.source_end),
+            "-i", str(source_video),
+        ]
     else:
-        image = assets_dir / shot.image_file
-        args = ["ffmpeg", "-y", "-loop", "1", "-i", str(image)]
+        video = assets_dir / shot.video_file if shot.video_file else None
+        if video and video.exists():
+            args = ["ffmpeg", "-y", "-stream_loop", "-1", "-i", str(video)]
+        else:
+            image = assets_dir / shot.image_file
+            args = ["ffmpeg", "-y", "-loop", "1", "-i", str(image)]
 
     if voice_path and voice_path.exists():
-        # Real narration track; pad with silence so the shot reaches `duration`.
-        args += ["-i", str(voice_path)]
-        audio_filter = ["-af", "apad"]
+        # Narration track; pad with silence so the shot reaches `duration`.
+        args += ["-i", str(voice_path), "-map", "0:v:0", "-map", "1:a:0", "-af", "apad"]
+    elif shot.is_source_segment:
+        # Keep the source clip's own audio.
+        args += ["-map", "0:v:0", "-map", "0:a:0?"]
     else:
-        args += ["-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo"]
-        audio_filter = []
+        args += ["-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
+                 "-map", "0:v:0", "-map", "1:a:0"]
 
     args += [
-        "-map", "0:v:0", "-map", "1:a:0",
         "-t", str(duration),
-        "-vf", vf, *audio_filter,
+        "-vf", vf,
         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", str(_FPS),
         "-c:a", "aac", "-ar", "44100",
         str(seg),

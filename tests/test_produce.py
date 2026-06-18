@@ -4,8 +4,9 @@ from pathlib import Path
 import pytest
 
 from ai_clip.analyze import analyzer
+from ai_clip.core import llm as llm_mod
 from ai_clip.core.config import AssetsConfig, LLMConfig
-from ai_clip.core.models import Transcript, ViralAnalysis
+from ai_clip.core.models import Transcript, TranscriptSegment, VideoFormat
 from ai_clip.produce import storyboard as sb_mod
 from ai_clip.produce.assets.comfyui import ComfyUIError, ComfyUIProvider
 from ai_clip.produce.assets.factory import resolve_image_provider
@@ -22,26 +23,27 @@ _ANALYSIS_REPLY = json.dumps(
     }
 )
 
-_STORYBOARD_REPLY = json.dumps(
-    {
-        "shots": [
-            {
-                "duration_sec": 3,
-                "shot_type": "close-up",
-                "image_prompt": "城市夜景霓虹特写",
-                "video_prompt": "镜头缓慢推进",
-                "voiceover": "你知道吗",
-            },
-            {
-                "duration_sec": 4,
-                "shot_type": "wide",
-                "image_prompt": "骑行者穿过街道",
-                "video_prompt": "跟拍运镜",
-                "voiceover": "答案很简单",
-            },
-        ]
-    }
-)
+_TALKING_HEAD_REPLY = json.dumps({
+    "lines": [
+        {"voiceover": "你知道吗", "duration_sec": 4, "broll_prompt": "城市夜景"},
+        {"voiceover": "答案很简单", "duration_sec": 3, "broll_prompt": ""},
+    ]
+})
+
+_SLIDESHOW_REPLY = json.dumps({
+    "cards": [
+        {"caption": "第一招", "voiceover": "先做这个", "image_prompt": "图1", "duration_sec": 3},
+        {"caption": "第二招", "voiceover": "再做那个", "image_prompt": "图2", "duration_sec": 3},
+    ]
+})
+
+_REMIX_REPLY = json.dumps({
+    "spans": [
+        {"source_start": 1.0, "source_end": 4.0, "voiceover": "高能片段一"},
+        {"source_start": 5.0, "source_end": 999.0, "voiceover": "高能片段二"},  # clamp
+        {"source_start": 8.0, "source_end": 8.0, "voiceover": "零长度丢弃"},   # dropped
+    ]
+})
 
 
 def test_analyze_with_mocked_llm(monkeypatch):
@@ -58,22 +60,60 @@ def test_analyze_empty_transcript():
         analyzer.analyze(Transcript(clip_id="c1", text="  "), LLMConfig(api_key="x"))
 
 
-def test_generate_storyboard_and_files(monkeypatch, tmp_path: Path):
-    monkeypatch.setattr(sb_mod.llm_mod, "chat", lambda *a, **k: _STORYBOARD_REPLY)
-    analysis = ViralAnalysis(clip_id="c1", formula="反常识钩子")
-    sb = sb_mod.generate_storyboard("demo", "夜骑", LLMConfig(api_key="x"), analysis)
-
+def test_talking_head_format(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(llm_mod, "chat", lambda *a, **k: _TALKING_HEAD_REPLY)
+    sb = sb_mod.generate_storyboard(
+        "demo", "理财", LLMConfig(api_key="x"), fmt=VideoFormat.talking_head
+    )
+    assert sb.format == VideoFormat.talking_head
     assert len(sb.shots) == 2
-    # filename contract
-    assert sb.shots[0].image_file == "shot_01.png"
-    assert sb.shots[0].video_file == "shot_01.mp4"
-    assert sb.source_clip_id == "c1"
+    assert sb.shots[0].voiceover == "你知道吗"
+    assert sb.shots[0].image_file == "shot_01.png"  # has b-roll
+    assert sb.shots[1].image_file == ""  # no b-roll -> no asset expected
+    assert sb.shots[1].expected_files() == []
 
     prompts = tmp_path / "prompts"
-    md = tmp_path / "storyboard.md"
-    sb_mod.write_storyboard_files(sb, prompts, md)
-    assert (prompts / "shot_01_image.txt").read_text(encoding="utf-8") == "城市夜景霓虹特写"
-    assert "Shot 01" in md.read_text(encoding="utf-8")
+    sb_mod.write_storyboard_files(sb, prompts, tmp_path / "storyboard.md")
+    assert (prompts / "shot_01_image.txt").read_text(encoding="utf-8") == "城市夜景"
+    assert not (prompts / "shot_02_image.txt").exists()
+
+
+def test_slideshow_format(monkeypatch):
+    monkeypatch.setattr(llm_mod, "chat", lambda *a, **k: _SLIDESHOW_REPLY)
+    sb = sb_mod.generate_storyboard(
+        "demo", "技巧", LLMConfig(api_key="x"), fmt=VideoFormat.slideshow
+    )
+    assert sb.format == VideoFormat.slideshow
+    assert sb.shots[0].caption == "第一招"
+    assert sb.shots[0].image_file == "shot_01.png"
+
+
+def test_remix_format_clamps_and_drops(monkeypatch):
+    monkeypatch.setattr(llm_mod, "chat", lambda *a, **k: _REMIX_REPLY)
+    transcript = Transcript(
+        clip_id="c1",
+        segments=[
+            TranscriptSegment(start=0.0, end=4.0, text="a"),
+            TranscriptSegment(start=4.0, end=10.0, text="b"),
+        ],
+    )
+    sb = sb_mod.generate_storyboard(
+        "demo", "盘点", LLMConfig(api_key="x"),
+        fmt=VideoFormat.remix, transcript=transcript,
+    )
+    assert sb.format == VideoFormat.remix
+    assert len(sb.shots) == 2  # zero-length span dropped
+    assert sb.shots[0].is_source_segment
+    assert sb.shots[0].expected_files() == []  # remix needs no generated assets
+    assert sb.shots[1].source_end == 10.0  # clamped to transcript max
+
+
+def test_remix_requires_transcript(monkeypatch):
+    monkeypatch.setattr(llm_mod, "chat", lambda *a, **k: _REMIX_REPLY)
+    with pytest.raises(ValueError):
+        sb_mod.generate_storyboard(
+            "demo", "x", LLMConfig(api_key="x"), fmt=VideoFormat.remix
+        )
 
 
 def test_factory_prompt_only():

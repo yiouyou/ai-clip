@@ -59,6 +59,20 @@ Original (theme only, no source clip):
 ai-clip original --project promo --theme "城市夜骑 vlog 开场" --shots 5
 ```
 
+## Video formats (`--format`)
+
+`storyboard` / `remix` / `original` accept `--format` to match the viral archetype:
+
+| Format | What it produces | Assets needed |
+|--------|------------------|---------------|
+| `talking_head` (default) | Narration lines + optional b-roll stills | Optional b-roll images |
+| `slideshow` | Image cards + on-screen captions + narration | One image per card |
+| `remix` | Spans cut from the **source clip** + new narration | None (uses source) |
+| `montage` | Fully AI-generated multi-shot drama | Image (+video) per shot |
+
+`remix` needs a source clip (use `ai-clip remix <url>`); it produces a playable
+video with just `voiceover` + `assemble` — no manual asset creation.
+
 Run any stage on its own: `download`, `extract`, `analyze`, `storyboard`,
 `status`, `voiceover`, `assemble`.
 
