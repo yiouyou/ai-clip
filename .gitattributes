@@ -1,0 +1,11 @@
+# Normalize all text to LF in the repo, regardless of OS. No Windows CRLF.
+* text=auto eol=lf
+
+# Explicit binary types (never touch line endings).
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.mp3 binary
+*.mp4 binary
+*.wav binary
