@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+/data/
+/services/comfyui/models/
+/workflows/txt2img.json
+.pytest_cache/
+.ruff_cache/
+*.egg-info/

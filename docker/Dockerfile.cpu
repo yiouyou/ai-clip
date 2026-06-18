@@ -1,0 +1,19 @@
+# CPU image for the orchestrator: download + extract (int8 whisper) + produce.
+FROM python:3.12-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY pyproject.toml README.md ./
+COPY src ./src
+COPY config ./config
+COPY workflows ./workflows
+
+RUN pip install --no-cache-dir -e ".[download,extract,llm]"
+
+ENV AICLIP_DATA_DIR=/data
+VOLUME ["/data"]
+ENTRYPOINT ["ai-clip"]
+CMD ["--help"]

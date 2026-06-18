@@ -1,0 +1,22 @@
+# GPU image: CUDA + cuDNN runtime so faster-whisper runs float16 on the GPU.
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg python3.12 python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY pyproject.toml README.md ./
+COPY src ./src
+COPY config ./config
+COPY workflows ./workflows
+
+# torch (CUDA build) lets device.py detect the GPU and select float16.
+RUN pip install --no-cache-dir --break-system-packages \
+        torch --index-url https://download.pytorch.org/whl/cu124 \
+    && pip install --no-cache-dir --break-system-packages -e ".[download,extract,llm]"
+
+ENV AICLIP_DATA_DIR=/data
+VOLUME ["/data"]
+ENTRYPOINT ["ai-clip"]
+CMD ["--help"]

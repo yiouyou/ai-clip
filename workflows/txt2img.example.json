@@ -1,0 +1,7 @@
+{
+  "_comment": "Example ComfyUI API-format workflow. Export your own from ComfyUI (Save (API Format)), set the positive prompt node's text to the literal AICLIP_PROMPT, then save as workflows/txt2img.json to enable the comfyui provider.",
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": { "text": "AICLIP_PROMPT", "clip": ["4", 1] }
+  }
+}

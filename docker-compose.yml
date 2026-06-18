@@ -1,0 +1,47 @@
+# Per-tool containers sharing a ./data volume. Profiles pick what to start:
+#   docker compose --profile cpu up
+#   docker compose --profile gpu up
+services:
+  orchestrator-cpu:
+    profiles: ["cpu"]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.cpu
+    env_file: .env
+    volumes:
+      - ./data:/data
+      - ./workflows:/app/workflows
+
+  orchestrator-gpu:
+    profiles: ["gpu"]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.gpu
+    env_file: .env
+    volumes:
+      - ./data:/data
+      - ./workflows:/app/workflows
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # Local image generation. Uses a community ComfyUI image; mount your own models.
+  comfyui:
+    profiles: ["gpu"]
+    image: yanwk/comfyui-boot:cu124
+    ports:
+      - "8188:8188"
+    volumes:
+      - ./services/comfyui/models:/root/ComfyUI/models
+      - ./data:/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

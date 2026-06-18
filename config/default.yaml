@@ -1,0 +1,19 @@
+# ai-clip default configuration. Override per-machine via env vars (see .env.example)
+# or by passing --config path/to/file.yaml.
+
+data_dir: ./data
+aspect_ratio: "9:16"   # 9:16 portrait (Shorts/Reels/抖音) | 16:9 landscape
+
+whisper:
+  model_size: medium    # tiny|base|small|medium|large-v3
+  compute_type: auto    # auto -> int8 on CPU, float16 on GPU
+  language: null         # null = autodetect
+
+llm:
+  base_url: https://api.deepseek.com
+  model: deepseek-chat
+
+assets:
+  image_provider: auto        # auto|comfyui|prompt_only
+  video_provider: prompt_only  # prompt_only|comfyui
+  comfyui_url: http://127.0.0.1:8188
