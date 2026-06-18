@@ -55,3 +55,30 @@ def test_assemble_from_images(tmp_path: Path):
     assert out.exists()
     # two 1s shots -> ~2s output
     assert probe_duration(out) >= 1.8
+
+
+def _make_wav(path: Path, seconds: float):
+    run([
+        "ffmpeg", "-y", "-f", "lavfi", "-i", f"sine=frequency=440:duration={seconds}",
+        "-ar", "44100", str(path),
+    ])
+
+
+def test_assemble_with_voiceover_extends_duration(tmp_path: Path):
+    """A 3s narration on a 1s shot should stretch the shot to fit the audio."""
+    sb = Storyboard(
+        project="t",
+        aspect_ratio="9:16",
+        shots=[Shot(index=1, duration_sec=1.0, image_file="shot_01.png", video_file="shot_01.mp4")],
+    )
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    _make_png(assets / "shot_01.png", "green")
+
+    voice = tmp_path / "voice"
+    voice.mkdir()
+    _make_wav(voice / "shot_01.wav", 3.0)
+
+    out = assemble(sb, assets, tmp_path / "out.mp4", voice_dir=voice)
+    assert out.exists()
+    assert probe_duration(out) >= 2.8  # driven by the 3s narration, not the 1s shot

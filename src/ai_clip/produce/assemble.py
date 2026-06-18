@@ -12,8 +12,8 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from ai_clip.core.ffmpeg import ensure_ffmpeg, run
-from ai_clip.core.models import Storyboard
+from ai_clip.core.ffmpeg import ensure_ffmpeg, probe_duration, run
+from ai_clip.core.models import Shot, Storyboard
 
 _RESOLUTIONS = {"9:16": (1080, 1920), "16:9": (1920, 1080), "1:1": (1080, 1080)}
 _FPS = 30
@@ -36,7 +36,12 @@ def check_assets(sb: Storyboard, assets_dir: Path) -> list[str]:
     return missing
 
 
-def assemble(sb: Storyboard, assets_dir: Path, out_path: Path) -> Path:
+def assemble(
+    sb: Storyboard,
+    assets_dir: Path,
+    out_path: Path,
+    voice_dir: Path | None = None,
+) -> Path:
     ensure_ffmpeg()
     missing = check_assets(sb, assets_dir)
     if missing:
@@ -48,7 +53,7 @@ def assemble(sb: Storyboard, assets_dir: Path, out_path: Path) -> Path:
     with tempfile.TemporaryDirectory() as tmp:
         tmpdir = Path(tmp)
         segments = [
-            _normalize_shot(shot, assets_dir, tmpdir, w, h)
+            _normalize_shot(shot, assets_dir, tmpdir, w, h, voice_dir)
             for shot in sb.shots
         ]
         concat_file = tmpdir / "concat.txt"
@@ -62,25 +67,46 @@ def assemble(sb: Storyboard, assets_dir: Path, out_path: Path) -> Path:
     return out_path
 
 
-def _normalize_shot(shot, assets_dir: Path, tmpdir: Path, w: int, h: int) -> Path:
+def _shot_duration(shot: Shot, voice_path: Path | None) -> float:
+    """A shot lasts at least its configured length, extended to fit narration."""
+    if voice_path and voice_path.exists():
+        return max(shot.duration_sec, probe_duration(voice_path))
+    return shot.duration_sec
+
+
+def _normalize_shot(
+    shot: Shot, assets_dir: Path, tmpdir: Path, w: int, h: int, voice_dir: Path | None
+) -> Path:
     seg = tmpdir / f"seg_{shot.index:02d}.mp4"
     vf = (
         f"scale={w}:{h}:force_original_aspect_ratio=decrease,"
         f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={_FPS},format=yuv420p"
     )
+    voice_path = (voice_dir / f"shot_{shot.index:02d}.wav") if voice_dir else None
+    duration = _shot_duration(shot, voice_path)
+
     video = assets_dir / shot.video_file if shot.video_file else None
     if video and video.exists():
-        args = ["ffmpeg", "-y", "-i", str(video), "-t", str(shot.duration_sec)]
+        args = ["ffmpeg", "-y", "-stream_loop", "-1", "-i", str(video)]
     else:
         image = assets_dir / shot.image_file
-        args = ["ffmpeg", "-y", "-loop", "1", "-i", str(image), "-t", str(shot.duration_sec)]
+        args = ["ffmpeg", "-y", "-loop", "1", "-i", str(image)]
+
+    if voice_path and voice_path.exists():
+        # Real narration track; pad with silence so the shot reaches `duration`.
+        args += ["-i", str(voice_path)]
+        audio_filter = ["-af", "apad"]
+    else:
+        args += ["-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo"]
+        audio_filter = []
 
     args += [
-        "-f", "lavfi", "-t", str(shot.duration_sec), "-i", "anullsrc=r=44100:cl=stereo",
         "-map", "0:v:0", "-map", "1:a:0",
-        "-vf", vf,
+        "-t", str(duration),
+        "-vf", vf, *audio_filter,
         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", str(_FPS),
-        "-c:a", "aac", "-shortest", str(seg),
+        "-c:a", "aac", "-ar", "44100",
+        str(seg),
     ]
     run(args)
     return seg

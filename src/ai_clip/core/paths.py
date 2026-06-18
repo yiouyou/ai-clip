@@ -44,11 +44,19 @@ class ProjectPaths:
         return self.root / "assets"
 
     @property
+    def voice_dir(self) -> Path:
+        return self.root / "voice"
+
+    @property
+    def reference_audio(self) -> Path:
+        return self.root / "voice_reference.mp3"
+
+    @property
     def output_mp4(self) -> Path:
         return self.root / "output.mp4"
 
     def ensure(self) -> None:
-        for d in (self.root, self.prompts_dir, self.assets_dir):
+        for d in (self.root, self.prompts_dir, self.assets_dir, self.voice_dir):
             d.mkdir(parents=True, exist_ok=True)
 
 

@@ -17,3 +17,10 @@ assets:
   image_provider: auto        # auto|comfyui|prompt_only
   video_provider: prompt_only  # prompt_only|comfyui
   comfyui_url: http://127.0.0.1:8188
+
+tts:
+  base_url: https://api.xiaomimimo.com/v1
+  model: mimo-v2.5-tts-voiceclone   # mimo-v2.5-tts | -voiceclone | -voicedesign
+  voice: Chloe                       # preset voice (used when not cloning)
+  clone_from_source: true            # clone the source clip's speaker
+  reference_seconds: 10.0            # reference snippet length for cloning

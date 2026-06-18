@@ -11,6 +11,7 @@ from ai_clip.download import download as download_stage
 from ai_clip.extract import extract as extract_stage
 from ai_clip.produce import assemble as assemble_stage
 from ai_clip.produce import generate_storyboard, write_storyboard_files
+from ai_clip.produce.voiceover import build_mimo, generate_voiceover
 
 
 def _paths(cfg: Config, project: str) -> ProjectPaths:
@@ -69,7 +70,18 @@ def run_storyboard(
     return sb
 
 
+def run_voiceover(cfg: Config, project: str) -> dict[int, object]:
+    pp = _paths(cfg, project)
+    sb = read_model(pp.storyboard_json, Storyboard)
+    source_audio = None
+    if pp.transcript_json.exists():
+        source_audio = read_model(pp.transcript_json, Transcript).audio_path
+    tts = build_mimo(cfg.tts, source_audio, pp.reference_audio)
+    return generate_voiceover(sb, tts, pp.voice_dir)
+
+
 def run_assemble(cfg: Config, project: str):
     pp = _paths(cfg, project)
     sb = read_model(pp.storyboard_json, Storyboard)
-    return assemble_stage(sb, pp.assets_dir, pp.output_mp4)
+    voice_dir = pp.voice_dir if any(pp.voice_dir.glob("shot_*.wav")) else None
+    return assemble_stage(sb, pp.assets_dir, pp.output_mp4, voice_dir=voice_dir)

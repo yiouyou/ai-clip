@@ -4,9 +4,9 @@ An orchestrator that chains open-source tools into a short-video pipeline for bo
 **remixing** a viral clip (二创) and producing **original** videos from a theme.
 
 ```
-download → extract → analyze → storyboard → (human / ComfyUI makes assets) → assemble
- yt-dlp     ffmpeg +   LLM       LLM prompts                                    ffmpeg
-            whisper   teardown
+download → extract → analyze → storyboard → (human / ComfyUI makes assets) → voiceover → assemble
+ yt-dlp     ffmpeg +   LLM       LLM prompts                                    MiMo TTS    ffmpeg
+            whisper   teardown                                                  (clone)
 ```
 
 ai-clip is a lightweight **orchestrator**: it owns the data contract, the CLI, and
@@ -60,7 +60,21 @@ ai-clip original --project promo --theme "城市夜骑 vlog 开场" --shots 5
 ```
 
 Run any stage on its own: `download`, `extract`, `analyze`, `storyboard`,
-`status`, `assemble`.
+`status`, `voiceover`, `assemble`.
+
+## Voiceover (MiMo TTS + voice cloning)
+
+`ai-clip voiceover` synthesizes each shot's narration with Xiaomi
+[MiMo-V2.5-TTS](https://mimo.mi.com). With `tts.clone_from_source: true` (default)
+and the `mimo-v2.5-tts-voiceclone` model, it cuts a short reference snippet from
+the **voice extracted in the `extract` stage** and clones the original speaker —
+so a remix can keep the source creator's timbre. Without a source clip it falls
+back to a preset voice (`tts.voice`). Set `MIMO_API_KEY` in `.env`.
+
+```bash
+ai-clip voiceover --project demo     # -> data/demo/voice/shot_NN.wav
+ai-clip assemble  --project demo     # picks up voice/ automatically
+```
 
 ## ComfyUI (optional, local auto image generation)
 

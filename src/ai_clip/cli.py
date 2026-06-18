@@ -88,6 +88,16 @@ def status(
 
 
 @app.command()
+def voiceover(
+    project: str = typer.Option(..., "--project", "-p"),
+    config: str = typer.Option(None, "--config"),
+):
+    """Synthesize per-shot narration via MiMo TTS (clones the source voice by default)."""
+    produced = pipeline.run_voiceover(_cfg(config), project)
+    console.print(f"[green]voiceover[/] synthesized {len(produced)} shot(s)")
+
+
+@app.command()
 def assemble(
     project: str = typer.Option(..., "--project", "-p"),
     config: str = typer.Option(None, "--config"),
