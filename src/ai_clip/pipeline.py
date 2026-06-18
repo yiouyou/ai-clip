@@ -9,6 +9,7 @@ from ai_clip.core.models import Clip, Storyboard, Transcript, ViralAnalysis
 from ai_clip.core.paths import ProjectPaths, read_model, write_model
 from ai_clip.download import download as download_stage
 from ai_clip.extract import extract as extract_stage
+from ai_clip.extract.export import write_srt, write_txt
 from ai_clip.produce import assemble as assemble_stage
 from ai_clip.produce import generate_storyboard, write_storyboard_files
 from ai_clip.produce.voiceover import build_mimo, generate_voiceover
@@ -33,6 +34,15 @@ def run_extract(cfg: Config, project: str) -> Transcript:
     transcript = extract_stage(clip, pp.root, cfg.whisper)
     write_model(pp.transcript_json, transcript)
     return transcript
+
+
+def run_export(cfg: Config, project: str) -> tuple[object, object]:
+    pp = _paths(cfg, project)
+    transcript = read_model(pp.transcript_json, Transcript)
+    return (
+        write_srt(transcript, pp.transcript_srt),
+        write_txt(transcript, pp.transcript_txt),
+    )
 
 
 def run_analyze(cfg: Config, project: str) -> ViralAnalysis:

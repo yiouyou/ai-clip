@@ -43,6 +43,16 @@ def extract(
 
 
 @app.command()
+def export(
+    project: str = typer.Option(..., "--project", "-p"),
+    config: str = typer.Option(None, "--config"),
+):
+    """Export the transcript to .srt and .txt."""
+    srt, txt = pipeline.run_export(_cfg(config), project)
+    console.print(f"[green]exported[/] {srt} , {txt}")
+
+
+@app.command()
 def analyze(
     project: str = typer.Option(..., "--project", "-p"),
     config: str = typer.Option(None, "--config"),

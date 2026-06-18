@@ -24,6 +24,14 @@ class ProjectPaths:
         return self.root / "transcript.json"
 
     @property
+    def transcript_srt(self) -> Path:
+        return self.root / "transcript.srt"
+
+    @property
+    def transcript_txt(self) -> Path:
+        return self.root / "transcript.txt"
+
+    @property
     def analysis_json(self) -> Path:
         return self.root / "analysis.json"
 
