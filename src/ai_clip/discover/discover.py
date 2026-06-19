@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from ai_clip.core.models import CandidateList, Platform
+from ai_clip.discover.bilibili import BilibiliProvider
 from ai_clip.discover.ranking import rank, virality_score
 from ai_clip.discover.social import DouyinProvider, KuaishouProvider
 from ai_clip.discover.youtube import YouTubeProvider
 
 _PROVIDERS = {
     Platform.youtube: YouTubeProvider,
+    Platform.bilibili: BilibiliProvider,
     Platform.douyin: DouyinProvider,
     Platform.kuaishou: KuaishouProvider,
 }

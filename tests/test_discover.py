@@ -92,6 +92,33 @@ def test_discover_unknown_platform_raises():
         discover("AI", platform=Platform.tiktok)
 
 
+def test_bilibili_search_keyword(monkeypatch):
+    from ai_clip.discover.bilibili import BilibiliProvider, entry_to_candidate
+
+    c = entry_to_candidate({"url": "BV1xx", "title": "测评", "duration": 40,
+                            "view_count": 8000, "like_count": 600})
+    assert c.platform == Platform.bilibili
+    assert c.url == "https://www.bilibili.com/video/BV1xx"
+
+    entries = {"entries": [
+        {"webpage_url": "https://www.bilibili.com/video/BV1", "title": "AI", "duration": 50,
+         "view_count": 9000, "timestamp": None},
+    ]}
+
+    class FakeYDL:
+        def __init__(self, *a, **k): ...
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def extract_info(self, q, **k):
+            assert q.startswith("bilisearch")
+            return entries
+
+    import yt_dlp
+    monkeypatch.setattr(yt_dlp, "YoutubeDL", FakeYDL)
+    out = BilibiliProvider().search("AI", channel=None, since_days=7, limit=10)
+    assert len(out) == 1 and out[0].platform == Platform.bilibili
+
+
 def test_douyin_keyword_without_channel_raises():
     from ai_clip.discover.social import DouyinProvider
 
