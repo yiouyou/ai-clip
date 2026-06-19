@@ -113,6 +113,13 @@ ai-clip assemble  --project demo     # picks up voice/ automatically
    workflow exists, images are generated automatically; otherwise ai-clip falls back
    to prompt-only (you create assets in the browser).
 
+**No GPU? Still works.** The fastest CPU model is **SD-Turbo** (SD1.5, 1 step):
+launch ComfyUI with `--cpu`, drop `sd_turbo.safetensors` in `models/checkpoints/`,
+and use the bundled `workflows/txt2img.json` (512×768, 1 step). Verified: ~25s per
+image on CPU. Text-to-**video** is not practical on CPU — keep `video_provider:
+prompt_only` (即梦/可灵 in browser) or use a GPU. talking_head/slideshow only need
+stills, so CPU ComfyUI fully covers them; remix needs no generation at all.
+
 ## Docker
 
 ```bash
