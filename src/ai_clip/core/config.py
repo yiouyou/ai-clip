@@ -19,7 +19,8 @@ class WhisperConfig(BaseModel):
 
 
 class LLMConfig(BaseModel):
-    base_url: str = "https://api.deepseek.com"
+    # Full base incl. /v1 (OpenAI convention). DeepSeek: https://api.deepseek.com/v1
+    base_url: str = "https://api.deepseek.com/v1"
     api_key: str = ""
     # DeepSeek: deepseek-v4-pro | OpenAI: gpt-5.5 (set to match base_url).
     model: str = "deepseek-v4-pro"

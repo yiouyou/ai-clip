@@ -10,8 +10,8 @@ whisper:
   language: null         # null = autodetect
 
 llm:
-  base_url: https://api.deepseek.com
-  model: deepseek-v4-pro   # OpenAI: set base_url to api.openai.com + model gpt-5.5
+  base_url: https://api.deepseek.com/v1   # full base incl. /v1
+  model: deepseek-v4-pro                    # OpenAI: https://api.openai.com/v1 + gpt-5.5
 
 assets:
   image_provider: auto        # auto|comfyui|prompt_only

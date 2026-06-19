@@ -23,7 +23,7 @@ def chat(cfg: LLMConfig, system: str, user: str, timeout: float = 120.0) -> str:
     if not cfg.api_key:
         raise LLMError("LLM api_key is empty. Set AICLIP_LLM_API_KEY in your .env.")
     resp = httpx.post(
-        f"{cfg.base_url.rstrip('/')}/v1/chat/completions",
+        f"{cfg.base_url.rstrip('/')}/chat/completions",
         headers={"Authorization": f"Bearer {cfg.api_key}"},
         json={
             "model": cfg.model,
