@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .env
 /data/
+/.testdata/
 /services/comfyui/models/
 /workflows/txt2img.json
 .pytest_cache/
