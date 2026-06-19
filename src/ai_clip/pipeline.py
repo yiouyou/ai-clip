@@ -163,5 +163,6 @@ def run_assemble(cfg: Config, project: str):
     if pp.clip_json.exists():
         source_video = Path(read_model(pp.clip_json, Clip).video_path)
     return assemble_stage(
-        sb, pp.assets_dir, pp.output_mp4, voice_dir=voice_dir, source_video=source_video
+        sb, pp.assets_dir, pp.output_mp4, voice_dir=voice_dir,
+        source_video=source_video, burn_captions=cfg.burn_captions,
     )

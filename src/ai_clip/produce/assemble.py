@@ -14,6 +14,12 @@ from pathlib import Path
 
 from ai_clip.core.ffmpeg import ensure_ffmpeg, probe_duration, run
 from ai_clip.core.models import Shot, Storyboard
+from ai_clip.produce.captions import (
+    drawtext_filter,
+    prepare_font,
+    shot_text,
+    wrap_text,
+)
 
 _RESOLUTIONS = {"9:16": (1080, 1920), "16:9": (1920, 1080), "1:1": (1080, 1080)}
 _FPS = 30
@@ -46,6 +52,7 @@ def assemble(
     out_path: Path,
     voice_dir: Path | None = None,
     source_video: Path | None = None,
+    burn_captions: bool = False,
 ) -> Path:
     ensure_ffmpeg()
     missing = check_assets(sb, assets_dir)
@@ -61,8 +68,11 @@ def assemble(
 
     with tempfile.TemporaryDirectory() as tmp:
         tmpdir = Path(tmp)
+        font_name = prepare_font(tmpdir) if burn_captions else None
         segments = [
-            _normalize_shot(shot, assets_dir, tmpdir, w, h, voice_dir, source_video)
+            _normalize_shot(
+                shot, assets_dir, tmpdir, w, h, voice_dir, source_video, font_name
+            )
             for shot in sb.shots
         ]
         concat_file = tmpdir / "concat.txt"
@@ -91,12 +101,17 @@ def _normalize_shot(
     h: int,
     voice_dir: Path | None,
     source_video: Path | None = None,
+    font_name: str | None = None,
 ) -> Path:
     seg = tmpdir / f"seg_{shot.index:02d}.mp4"
     vf = (
         f"scale={w}:{h}:force_original_aspect_ratio=decrease,"
         f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={_FPS},format=yuv420p"
     )
+    if font_name and shot_text(shot):
+        text_name = f"cap_{shot.index:02d}.txt"
+        (tmpdir / text_name).write_text(wrap_text(shot_text(shot)), encoding="utf-8")
+        vf = f"{vf},{drawtext_filter(font_name, text_name, w)}"
     voice_path = (voice_dir / f"shot_{shot.index:02d}.wav") if voice_dir else None
     duration = _shot_duration(shot, voice_path)
 
@@ -134,5 +149,6 @@ def _normalize_shot(
         "-c:a", "aac", "-ar", "44100",
         str(seg),
     ]
-    run(args)
+    # cwd=tmpdir so drawtext can reference the font/text by colon-free relative name.
+    run(args, cwd=tmpdir)
     return seg

@@ -45,6 +45,7 @@ class TTSConfig(BaseModel):
 class Config(BaseModel):
     data_dir: str = "./data"
     aspect_ratio: str = "9:16"
+    burn_captions: bool = False  # burn caption/voiceover text into the video
     whisper: WhisperConfig = Field(default_factory=WhisperConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     assets: AssetsConfig = Field(default_factory=AssetsConfig)

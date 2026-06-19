@@ -176,3 +176,19 @@ def test_assemble_mixed_media(tmp_path: Path):
     assert out.exists()
     # 1 + 1 + 2(span) + 1 = ~5s
     assert probe_duration(out) >= 4.5
+
+
+def test_assemble_with_burned_captions(tmp_path: Path):
+    from ai_clip.core.fonts import find_cjk_font
+    if not find_cjk_font():
+        pytest.skip("no CJK font available")
+    sb = Storyboard(
+        project="t", aspect_ratio="9:16",
+        shots=[Shot(index=1, duration_sec=1.0, image_file="shot_01.png", caption="测试字幕")],
+    )
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    _make_png(assets / "shot_01.png", "purple")
+    out = assemble(sb, assets, tmp_path / "out.mp4", burn_captions=True)
+    assert out.exists()
+    assert probe_duration(out) >= 0.8

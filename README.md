@@ -105,6 +105,17 @@ ai-clip remix <url> --theme "锐评本周AI" --intent emotion -p p1
 ai-clip original --theme "麻友手气" --intent sales --product products/mahjong.yaml -p p2
 ```
 
+### Burned-in captions
+
+Add `--captions` (or `burn_captions: true` in config) to burn each shot's caption
+(slideshow) or narration (talking-head/remix) into the video via ffmpeg `drawtext`.
+A CJK-capable system font is auto-detected; if none is found, burning is skipped.
+
+```bash
+ai-clip remix <url> --theme T --captions -p p1
+ai-clip assemble -p p1 --captions
+```
+
 ## Voiceover (MiMo TTS + voice cloning)
 
 `ai-clip voiceover` synthesizes each shot's narration with Xiaomi

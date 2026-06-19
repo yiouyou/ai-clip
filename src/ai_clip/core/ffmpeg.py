@@ -21,9 +21,10 @@ def ensure_ffmpeg() -> None:
             )
 
 
-def run(args: list[str]) -> None:
+def run(args: list[str], cwd: str | Path | None = None) -> None:
     proc = subprocess.run(
-        args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        cwd=str(cwd) if cwd else None,
     )
     if proc.returncode != 0:
         raise FFmpegError(f"command failed: {' '.join(args)}\n{proc.stderr.strip()}")

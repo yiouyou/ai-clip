@@ -147,11 +147,14 @@ def voiceover(
 @app.command()
 def assemble(
     project: str = typer.Option(..., "--project", "-p"),
+    captions: bool = typer.Option(False, "--captions"),
     config: str = typer.Option(None, "--config"),
 ):
     """Stitch collected assets into the final MP4."""
+    cfg = _cfg(config)
+    cfg.burn_captions = captions or cfg.burn_captions
     try:
-        out = pipeline.run_assemble(_cfg(config), project)
+        out = pipeline.run_assemble(cfg, project)
     except MissingAssetsError as exc:
         console.print(f"[red]cannot assemble[/] — {exc}")
         raise typer.Exit(1) from exc
@@ -192,13 +195,16 @@ def remix(
     intent: Intent = typer.Option(Intent.info, "--intent", "-i"),
     stance: str = typer.Option("", "--stance"),
     product: str = typer.Option(None, "--product"),
+    captions: bool = typer.Option(False, "--captions"),
     duration: float = typer.Option(30.0, "--duration"),
     shots: int = typer.Option(6, "--shots"),
     config: str = typer.Option(None, "--config"),
 ):
     """W3 二创(全自动): download -> ... -> remix storyboard -> cloned voiceover -> mp4."""
+    cfg = _cfg(config)
+    cfg.burn_captions = captions or cfg.burn_captions
     r = workflows.remix(
-        _cfg(config), project, url, theme, intent=intent, stance=stance,
+        cfg, project, url, theme, intent=intent, stance=stance,
         product=load_product(product), duration=duration, n_shots=shots,
     )
     console.print(f"[green]remix done[/] -> {r['output']}")
@@ -212,6 +218,7 @@ def original(
     intent: Intent = typer.Option(Intent.info, "--intent", "-i"),
     stance: str = typer.Option("", "--stance"),
     product: str = typer.Option(None, "--product"),
+    captions: bool = typer.Option(False, "--captions"),
     duration: float = typer.Option(30.0, "--duration"),
     shots: int = typer.Option(6, "--shots"),
     config: str = typer.Option(None, "--config"),
@@ -220,8 +227,10 @@ def original(
     if fmt == VideoFormat.remix:
         console.print("[red]remix format needs a source clip; use `ai-clip remix`.[/]")
         raise typer.Exit(1)
+    cfg = _cfg(config)
+    cfg.burn_captions = captions or cfg.burn_captions
     r = workflows.original(
-        _cfg(config), project, theme, fmt=fmt, intent=intent, stance=stance,
+        cfg, project, theme, fmt=fmt, intent=intent, stance=stance,
         product=load_product(product), duration=duration, n_shots=shots,
     )
     if r["status"] == "done":
