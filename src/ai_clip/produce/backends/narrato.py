@@ -55,6 +55,23 @@ class NarratoBackend:
         self.narrato_dir = Path(narrato_dir)
         self.python_exe = str(python_exe)
 
+    def _ensure_cjk_font(self) -> str:
+        """NarratoAI ships no font; drop a CJK font into its resource/fonts so
+        Chinese subtitles render (otherwise they come out as tofu boxes).
+        Returns the font filename to pass as params.font_name, or "" if none."""
+        from ai_clip.core.fonts import find_cjk_font  # noqa: PLC0415
+
+        font = find_cjk_font()
+        if not font:
+            return ""
+        dest_dir = self.narrato_dir / "resource" / "fonts"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        name = Path(font).name
+        dest = dest_dir / name
+        if not dest.exists():
+            shutil.copyfile(font, dest)
+        return name
+
     def produce_remix(
         self,
         source_video: str | Path,
@@ -71,6 +88,7 @@ class NarratoBackend:
             "video_clip_json": clip_json,
             "voice_name": voice_name,
             "out_path": str(out),
+            "font_name": self._ensure_cjk_font(),
         }
         proc = subprocess.run(
             [self.python_exe, str(_RUNNER)],

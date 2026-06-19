@@ -34,6 +34,8 @@ def main() -> None:
         voice_name=job.get("voice_name", "zh-CN-YunjianNeural"),
         subtitle_enabled=job.get("subtitle_enabled", True),
     )
+    if job.get("font_name"):
+        params.font_name = job["font_name"]
     task_id = uuid.uuid4().hex
     result = task_service.start_subclip_unified(task_id, params)
 
