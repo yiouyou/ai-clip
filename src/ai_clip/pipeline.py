@@ -150,6 +150,33 @@ def run_assets(cfg: Config, project: str) -> int:
     return generated
 
 
+def run_review_export(cfg: Config, project: str):
+    """Write an editable script.md from storyboard.json."""
+    from ai_clip.produce.review import to_script_md
+
+    pp = _paths(cfg, project)
+    sb = read_model(pp.storyboard_json, Storyboard)
+    pp.script_md.write_text(to_script_md(sb), encoding="utf-8")
+    return pp.script_md
+
+
+def run_review_apply(cfg: Config, project: str) -> Storyboard:
+    """Parse edited script.md back into storyboard.json."""
+    from ai_clip.produce.review import apply_script_md
+    from ai_clip.produce.storyboard import write_storyboard_files
+
+    pp = _paths(cfg, project)
+    sb = read_model(pp.storyboard_json, Storyboard)
+    source_max = None
+    if pp.clip_json.exists():
+        source_max = read_model(pp.clip_json, Clip).duration_sec or None
+    text = pp.script_md.read_text(encoding="utf-8")
+    updated = apply_script_md(sb, text, source_max=source_max)
+    write_model(pp.storyboard_json, updated)
+    write_storyboard_files(updated, pp.prompts_dir, pp.storyboard_md)
+    return updated
+
+
 def run_voiceover(cfg: Config, project: str) -> dict[int, object]:
     pp = _paths(cfg, project)
     sb = read_model(pp.storyboard_json, Storyboard)

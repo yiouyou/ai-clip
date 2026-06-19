@@ -48,6 +48,10 @@ class ProjectPaths:
         return self.root / "storyboard.md"
 
     @property
+    def script_md(self) -> Path:
+        return self.root / "script.md"
+
+    @property
     def prompts_dir(self) -> Path:
         return self.root / "prompts"
 

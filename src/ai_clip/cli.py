@@ -136,6 +136,26 @@ def status(
 
 
 @app.command()
+def review(
+    project: str = typer.Option(..., "--project", "-p"),
+    apply: bool = typer.Option(False, "--apply", help="parse edited script.md back into storyboard"),
+    config: str = typer.Option(None, "--config"),
+):
+    """Export an editable script.md (the 文案), or --apply edits back to storyboard."""
+    cfg = _cfg(config)
+    if apply:
+        sb = pipeline.run_review_apply(cfg, project)
+        console.print(f"[green]applied[/] script -> storyboard ({len(sb.shots)} shots)")
+    else:
+        path = pipeline.run_review_export(cfg, project)
+        console.print(
+            f"[green]script[/] -> {path}\n"
+            "[yellow]Edit the narration (and remix timestamps), then:[/] "
+            f"ai-clip review -p {project} --apply"
+        )
+
+
+@app.command()
 def voiceover(
     project: str = typer.Option(..., "--project", "-p"),
     config: str = typer.Option(None, "--config"),
