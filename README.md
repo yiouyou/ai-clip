@@ -161,6 +161,20 @@ docker compose --profile gpu up        # GPU box (whisper on CUDA + ComfyUI serv
 `profiles` control what gets installed/started; the orchestrator and each heavy tool
 get their own container and communicate over a shared `./data` volume.
 
+## External produce backends (optional)
+
+Alternatives to the self-built storyboard→voiceover→assemble path, for comparison:
+
+- **MoneyPrinterTurbo** (theme → stock-footage + TTS + subtitle video). It has a
+  REST API, so `ai-clip mpt --theme T -p P` drives it cleanly. Run MoneyPrinterTurbo
+  (Docker) with an LLM + Pexels/Pixabay key, set `AICLIP_MPT_URL` (default
+  `http://127.0.0.1:8080`). Verified end-to-end.
+- **NarratoAI** (解说二创). It is WebUI-only (no HTTP API), so `NarratoBackend`
+  hard-wires its internal `start_subclip_unified` via a subprocess runner inside
+  NarratoAI's own repo/venv; an ai-clip remix storyboard maps to its clip script.
+
+These are opt-in; the default pipeline needs none of them.
+
 ## License & dependencies
 
 ai-clip orchestrates third-party projects (yt-dlp, faster-whisper, ComfyUI, etc.);
