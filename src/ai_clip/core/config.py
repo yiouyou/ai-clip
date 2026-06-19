@@ -24,6 +24,8 @@ class LLMConfig(BaseModel):
     api_key: str = ""
     # DeepSeek: deepseek-v4-pro | OpenAI: gpt-5.5 (set to match base_url).
     model: str = "deepseek-v4-pro"
+    # Omitted from the request when None (GPT-5 line rejects non-default values).
+    temperature: float | None = None
 
 
 class AssetsConfig(BaseModel):

@@ -22,17 +22,19 @@ class LLMError(RuntimeError):
 def chat(cfg: LLMConfig, system: str, user: str, timeout: float = 120.0) -> str:
     if not cfg.api_key:
         raise LLMError("LLM api_key is empty. Set AICLIP_LLM_API_KEY in your .env.")
+    payload: dict = {
+        "model": cfg.model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+    }
+    if cfg.temperature is not None:
+        payload["temperature"] = cfg.temperature
     resp = httpx.post(
         f"{cfg.base_url.rstrip('/')}/chat/completions",
         headers={"Authorization": f"Bearer {cfg.api_key}"},
-        json={
-            "model": cfg.model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            "temperature": 0.7,
-        },
+        json=payload,
         timeout=timeout,
     )
     resp.raise_for_status()
