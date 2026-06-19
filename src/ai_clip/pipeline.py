@@ -6,6 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ai_clip.analyze import analyze as analyze_stage
+from ai_clip.core import billing
 from ai_clip.core.config import Config
 from ai_clip.core.models import (
     CandidateList,
@@ -81,7 +82,8 @@ def run_analyze(
 ) -> ViralAnalysis:
     pp = _paths(cfg, project)
     transcript = read_model(pp.transcript_json, Transcript)
-    analysis = analyze_stage(transcript, cfg.llm, intent)
+    with billing.account(pp.root, "analyze"):
+        analysis = analyze_stage(transcript, cfg.llm, intent)
     write_model(pp.analysis_json, analysis)
     return analysis
 
@@ -108,20 +110,21 @@ def run_storyboard(
         if pp.transcript_json.exists()
         else None
     )
-    sb = generate_storyboard(
-        project=project,
-        theme=theme,
-        cfg=cfg.llm,
-        fmt=fmt,
-        analysis=analysis,
-        transcript=transcript,
-        intent=intent,
-        stance=stance,
-        product=product,
-        duration_sec=duration_sec,
-        aspect_ratio=cfg.aspect_ratio,
-        n_shots=n_shots,
-    )
+    with billing.account(pp.root, "storyboard"):
+        sb = generate_storyboard(
+            project=project,
+            theme=theme,
+            cfg=cfg.llm,
+            fmt=fmt,
+            analysis=analysis,
+            transcript=transcript,
+            intent=intent,
+            stance=stance,
+            product=product,
+            duration_sec=duration_sec,
+            aspect_ratio=cfg.aspect_ratio,
+            n_shots=n_shots,
+        )
     write_model(pp.storyboard_json, sb)
     write_storyboard_files(sb, pp.prompts_dir, pp.storyboard_md)
     return sb
@@ -154,7 +157,8 @@ def run_voiceover(cfg: Config, project: str) -> dict[int, object]:
     if pp.transcript_json.exists():
         source_audio = read_model(pp.transcript_json, Transcript).audio_path
     tts = build_mimo(cfg.tts, source_audio, pp.reference_audio)
-    return generate_voiceover(sb, tts, pp.voice_dir)
+    with billing.account(pp.root, "voiceover"):
+        return generate_voiceover(sb, tts, pp.voice_dir)
 
 
 def run_assemble(cfg: Config, project: str):

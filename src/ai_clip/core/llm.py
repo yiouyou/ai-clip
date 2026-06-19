@@ -11,6 +11,7 @@ import re
 
 import httpx
 
+from ai_clip.core import billing
 from ai_clip.core.config import LLMConfig
 
 
@@ -35,7 +36,14 @@ def chat(cfg: LLMConfig, system: str, user: str, timeout: float = 120.0) -> str:
         timeout=timeout,
     )
     resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]["content"]
+    data = resp.json()
+    usage = data.get("usage") or {}
+    billing.record_llm(
+        cfg.model,
+        int(usage.get("prompt_tokens", 0)),
+        int(usage.get("completion_tokens", 0)),
+    )
+    return data["choices"][0]["message"]["content"]
 
 
 def extract_json(text: str) -> dict:

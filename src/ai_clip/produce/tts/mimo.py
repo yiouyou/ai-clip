@@ -86,4 +86,8 @@ class MimoTTS:
         out = Path(out_path)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(base64.b64decode(data))
+
+        from ai_clip.core import billing  # noqa: PLC0415
+
+        billing.record_tts("mimo", len(text))
         return out

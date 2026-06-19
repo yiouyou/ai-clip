@@ -246,6 +246,27 @@ def original(
 
 
 @app.command()
+def cost(
+    project: str = typer.Option(..., "--project", "-p"),
+    config: str = typer.Option(None, "--config"),
+):
+    """Show metered spend (LLM tokens + TTS chars) for a project."""
+    from ai_clip.core import billing
+
+    pp = ProjectPaths(_cfg(config).data_dir, project)
+    s = billing.summarize(pp.root)
+    t = s["total"]
+    console.print(
+        f"[green]total ${t['cost']:.4f}[/] over {t['calls']} call(s) | "
+        f"in {t['input_tokens']:,} / out {t['output_tokens']:,} tok | {t['chars']:,} chars"
+    )
+    for stage, c in s["by_stage"].items():
+        console.print(f"  stage {stage}: ${c:.4f}")
+    for model, c in s["by_model"].items():
+        console.print(f"  model {model}: ${c:.4f}")
+
+
+@app.command()
 def mpt(
     theme: str = typer.Option(..., "--theme"),
     project: str = typer.Option(..., "--project", "-p"),
