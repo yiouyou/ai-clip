@@ -7,8 +7,17 @@ from pathlib import Path
 
 from ai_clip.analyze import analyze as analyze_stage
 from ai_clip.core.config import Config
-from ai_clip.core.models import Clip, Storyboard, Transcript, ViralAnalysis, VideoFormat
+from ai_clip.core.models import (
+    CandidateList,
+    Clip,
+    Platform,
+    Storyboard,
+    Transcript,
+    ViralAnalysis,
+    VideoFormat,
+)
 from ai_clip.core.paths import ProjectPaths, read_model, write_model
+from ai_clip.discover import discover as discover_stage
 from ai_clip.download import download as download_stage
 from ai_clip.extract import extract as extract_stage
 from ai_clip.extract.export import write_srt, write_txt
@@ -21,6 +30,22 @@ def _paths(cfg: Config, project: str) -> ProjectPaths:
     pp = ProjectPaths(cfg.data_dir, project)
     pp.ensure()
     return pp
+
+
+def run_discover(
+    cfg: Config,
+    project: str,
+    topic: str,
+    platform: Platform = Platform.youtube,
+    channel: str | None = None,
+    since_days: int = 7,
+    limit: int = 15,
+    top_n: int = 5,
+) -> CandidateList:
+    pp = _paths(cfg, project)
+    result = discover_stage(topic, platform, channel, since_days, limit, top_n)
+    write_model(pp.candidates_json, result)
+    return result
 
 
 def run_download(cfg: Config, project: str, url: str) -> Clip:

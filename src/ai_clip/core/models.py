@@ -21,6 +21,29 @@ class Platform(StrEnum):
     unknown = "unknown"
 
 
+class Candidate(BaseModel):
+    """A discovered video, before download. Ranked by `virality`."""
+
+    url: str
+    platform: Platform = Platform.unknown
+    title: str = ""
+    uploader: str = ""
+    view_count: int = 0
+    like_count: int = 0
+    comment_count: int = 0
+    duration_sec: float = 0.0
+    age_days: float = 0.0
+    virality: float = 0.0
+
+
+class CandidateList(BaseModel):
+    """Output of the discover stage."""
+
+    topic: str = ""
+    platform: Platform = Platform.unknown
+    candidates: list[Candidate] = Field(default_factory=list)
+
+
 class Clip(BaseModel):
     """Output of the download stage."""
 

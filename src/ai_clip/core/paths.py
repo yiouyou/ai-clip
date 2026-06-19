@@ -16,6 +16,10 @@ class ProjectPaths:
         self.project = project
 
     @property
+    def candidates_json(self) -> Path:
+        return self.root / "candidates.json"
+
+    @property
     def clip_json(self) -> Path:
         return self.root / "clip.json"
 

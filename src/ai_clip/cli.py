@@ -9,7 +9,7 @@ from rich.console import Console
 
 from ai_clip.core.config import load_config
 from ai_clip.produce.assemble import MissingAssetsError, check_assets
-from ai_clip.core.models import Storyboard, VideoFormat
+from ai_clip.core.models import Platform, Storyboard, VideoFormat
 from ai_clip.core.paths import ProjectPaths, read_model
 from ai_clip import pipeline
 
@@ -19,6 +19,31 @@ console = Console()
 
 def _cfg(config: str | None):
     return load_config(config)
+
+
+@app.command()
+def discover(
+    topic: str,
+    project: str = typer.Option(..., "--project", "-p"),
+    platform: Platform = typer.Option(Platform.youtube, "--platform"),
+    channel: str = typer.Option(None, "--channel"),
+    since_days: int = typer.Option(7, "--since-days"),
+    limit: int = typer.Option(15, "--limit"),
+    top_n: int = typer.Option(5, "--top"),
+    config: str = typer.Option(None, "--config"),
+):
+    """Search a platform for recently-spreading clips on a topic, ranked by virality."""
+    result = pipeline.run_discover(
+        _cfg(config), project, topic, platform, channel, since_days, limit, top_n
+    )
+    if not result.candidates:
+        console.print("[yellow]no candidates found[/] (try widening --since-days)")
+        return
+    for i, c in enumerate(result.candidates, start=1):
+        console.print(
+            f"[green]{i}.[/] v={c.virality:,.0f} · {c.view_count:,} views · "
+            f"{c.age_days:.1f}d · {c.title[:60]}\n   {c.url}"
+        )
 
 
 @app.command()
