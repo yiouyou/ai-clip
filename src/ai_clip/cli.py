@@ -11,7 +11,7 @@ from ai_clip.core.config import load_config
 from ai_clip.produce.assemble import MissingAssetsError, check_assets
 from ai_clip.core.models import Platform, Storyboard, VideoFormat
 from ai_clip.core.paths import ProjectPaths, read_model
-from ai_clip import pipeline
+from ai_clip import pipeline, workflows
 
 app = typer.Typer(add_completion=False, help="Download, analyze and produce short videos.")
 console = Console()
@@ -151,23 +151,43 @@ def assemble(
     console.print(f"[green]assembled[/] -> {out}")
 
 
+# ---- composed workflows (W1-W5) ----
+
+@app.command()
+def transcribe(
+    url: str,
+    project: str = typer.Option(..., "--project", "-p"),
+    config: str = typer.Option(None, "--config"),
+):
+    """W1 提文案: download -> extract -> export srt/txt."""
+    r = workflows.transcribe(_cfg(config), project, url)
+    console.print(f"[green]transcribed[/] -> {r['srt']} , {r['txt']}")
+
+
+@app.command()
+def teardown(
+    url: str,
+    project: str = typer.Option(..., "--project", "-p"),
+    config: str = typer.Option(None, "--config"),
+):
+    """W2 爆款拆解: download -> extract -> analyze."""
+    r = workflows.teardown(_cfg(config), project, url)
+    console.print(f"[green]teardown[/] hook: {r['hook'][:80]}")
+    console.print(f"formula: {r['formula'][:120]}")
+
+
 @app.command()
 def remix(
     url: str,
     theme: str = typer.Option(..., "--theme"),
     project: str = typer.Option(..., "--project", "-p"),
-    fmt: VideoFormat = typer.Option(VideoFormat.remix, "--format", "-f"),
     duration: float = typer.Option(30.0, "--duration"),
     shots: int = typer.Option(6, "--shots"),
     config: str = typer.Option(None, "--config"),
 ):
-    """二创 flow: download -> extract -> analyze -> storyboard. Default format=remix."""
-    cfg = _cfg(config)
-    pipeline.run_download(cfg, project, url)
-    pipeline.run_extract(cfg, project)
-    pipeline.run_analyze(cfg, project)
-    sb = pipeline.run_storyboard(cfg, project, theme, fmt, duration, shots)
-    console.print(f"[green]storyboard ready[/] ({sb.format}) — next: voiceover + assemble.")
+    """W3 二创(全自动): download -> ... -> remix storyboard -> cloned voiceover -> mp4."""
+    r = workflows.remix(_cfg(config), project, url, theme, duration, shots)
+    console.print(f"[green]remix done[/] -> {r['output']}")
 
 
 @app.command()
@@ -179,12 +199,18 @@ def original(
     shots: int = typer.Option(6, "--shots"),
     config: str = typer.Option(None, "--config"),
 ):
-    """Original flow: storyboard from a theme only (no source clip). No remix format."""
+    """W4/W5 原创: storyboard -> assets(ComfyUI if available) -> voiceover -> assemble."""
     if fmt == VideoFormat.remix:
         console.print("[red]remix format needs a source clip; use `ai-clip remix`.[/]")
         raise typer.Exit(1)
-    sb = pipeline.run_storyboard(_cfg(config), project, theme, fmt, duration, shots)
-    console.print(f"[green]storyboard ready[/] ({sb.format}) — next: voiceover + assemble.")
+    r = workflows.original(_cfg(config), project, theme, fmt, duration, shots)
+    if r["status"] == "done":
+        console.print(f"[green]original done[/] -> {r['output']}")
+    else:
+        console.print(
+            f"[yellow]need assets[/] ({len(r['missing'])} missing, {r['generated']} generated). "
+            f"Fill {r['assets_dir']} per storyboard.md, then `ai-clip assemble`."
+        )
 
 
 if __name__ == "__main__":

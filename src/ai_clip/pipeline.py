@@ -115,6 +115,26 @@ def run_storyboard(
     return sb
 
 
+def run_assets(cfg: Config, project: str) -> int:
+    """Fill in image assets for shots that expect them, using the configured
+    provider (ComfyUI when available, else prompt_only which is a no-op and
+    leaves it to a human). Returns the number of assets generated."""
+    from ai_clip.produce.assets.factory import resolve_image_provider
+
+    pp = _paths(cfg, project)
+    sb = read_model(pp.storyboard_json, Storyboard)
+    provider = resolve_image_provider(cfg.assets)
+    generated = 0
+    for shot in sb.shots:
+        if not shot.image_file or not shot.image_prompt:
+            continue
+        if (pp.assets_dir / shot.image_file).exists():
+            continue
+        if provider.generate(shot, pp.assets_dir) is not None:
+            generated += 1
+    return generated
+
+
 def run_voiceover(cfg: Config, project: str) -> dict[int, object]:
     pp = _paths(cfg, project)
     sb = read_model(pp.storyboard_json, Storyboard)

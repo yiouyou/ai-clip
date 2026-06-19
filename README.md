@@ -73,8 +73,21 @@ ai-clip original --project promo --theme "城市夜骑 vlog 开场" --shots 5
 `remix` needs a source clip (use `ai-clip remix <url>`); it produces a playable
 video with just `voiceover` + `assemble` — no manual asset creation.
 
-Run any stage on its own: `download`, `extract`, `analyze`, `storyboard`,
-`status`, `voiceover`, `assemble`.
+Run any stage on its own: `discover`, `download`, `extract`, `export`,
+`analyze`, `storyboard`, `status`, `voiceover`, `assemble`.
+
+## Composed workflows
+
+One command chains the stages end to end:
+
+| Command | Flow | Output |
+|---------|------|--------|
+| `ai-clip transcribe <url> -p P` | download → extract → export | `.srt` + `.txt` |
+| `ai-clip teardown <url> -p P` | download → extract → analyze | viral formula |
+| `ai-clip remix <url> --theme T -p P` | download → extract → analyze → remix storyboard → cloned voiceover → assemble | **`output.mp4` (fully auto)** |
+| `ai-clip original --theme T -p P [-f talking_head\|slideshow]` | storyboard → assets (ComfyUI if available) → voiceover → assemble | `output.mp4`, or a prompt to fill `assets/` if no local generator |
+
+`discover` finds source URLs to feed these: `ai-clip discover "AI" -p P --top 5`.
 
 ## Voiceover (MiMo TTS + voice cloning)
 
