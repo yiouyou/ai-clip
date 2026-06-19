@@ -242,5 +242,31 @@ def original(
         )
 
 
+@app.command()
+def mpt(
+    theme: str = typer.Option(..., "--theme"),
+    project: str = typer.Option(..., "--project", "-p"),
+    voice: str = typer.Option("", "--voice"),
+    config: str = typer.Option(None, "--config"),
+):
+    """External backend: generate a theme video via MoneyPrinterTurbo's API."""
+    from ai_clip.produce.backends import MoneyPrinterBackend, ProduceSpec
+
+    cfg = _cfg(config)
+    pp = ProjectPaths(cfg.data_dir, project)
+    pp.ensure()
+    backend = MoneyPrinterBackend(cfg.produce.moneyprinter_url)
+    if not MoneyPrinterBackend.is_available(cfg.produce.moneyprinter_url):
+        console.print(
+            f"[red]MoneyPrinterTurbo not reachable[/] at {cfg.produce.moneyprinter_url}. "
+            "Start it (docker compose up in the MoneyPrinterTurbo repo)."
+        )
+        raise typer.Exit(1)
+    out = backend.produce(ProduceSpec(
+        theme=theme, out_path=pp.output_mp4, aspect_ratio=cfg.aspect_ratio, voice_name=voice,
+    ))
+    console.print(f"[green]mpt done[/] -> {out}")
+
+
 if __name__ == "__main__":
     app()

@@ -42,6 +42,11 @@ class TTSConfig(BaseModel):
     reference_seconds: float = 10.0  # length of reference snippet for cloning
 
 
+class ProduceConfig(BaseModel):
+    # External produce backend endpoints (optional alternatives to self-built).
+    moneyprinter_url: str = "http://127.0.0.1:8080"
+
+
 class Config(BaseModel):
     data_dir: str = "./data"
     aspect_ratio: str = "9:16"
@@ -50,6 +55,7 @@ class Config(BaseModel):
     llm: LLMConfig = Field(default_factory=LLMConfig)
     assets: AssetsConfig = Field(default_factory=AssetsConfig)
     tts: TTSConfig = Field(default_factory=TTSConfig)
+    produce: ProduceConfig = Field(default_factory=ProduceConfig)
 
 
 def _resolve_llm_key(base_url: str) -> str:
@@ -84,6 +90,9 @@ def _apply_env(cfg: Config) -> Config:
     cfg.tts.api_key = os.getenv("MIMO_API_KEY", cfg.tts.api_key)
 
     cfg.assets.comfyui_url = os.getenv("AICLIP_COMFYUI_URL", cfg.assets.comfyui_url)
+    cfg.produce.moneyprinter_url = os.getenv(
+        "AICLIP_MPT_URL", cfg.produce.moneyprinter_url
+    )
     cfg.data_dir = os.getenv("AICLIP_DATA_DIR", cfg.data_dir)
     return cfg
 
