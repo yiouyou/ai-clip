@@ -88,6 +88,9 @@ One command chains the stages end to end:
 | `ai-clip original --theme T -p P [-f talking_head\|slideshow]` | storyboard → assets (ComfyUI if available) → voiceover → assemble | `output.mp4`, or a prompt to fill `assets/` if no local generator |
 
 `discover` finds source URLs to feed these: `ai-clip discover "AI" -p P --top 5`.
+YouTube/Bilibili support keyword search; douyin/kuaishou have no search API, so pass
+`--platform douyin --channel <user page URL>` to rank a creator's recent clips (or
+just hand a direct video URL to `ai-clip download`).
 
 ### Intent (info / emotion / sales)
 

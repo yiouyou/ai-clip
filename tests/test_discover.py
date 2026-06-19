@@ -87,5 +87,36 @@ def test_youtube_search_filters_long_and_old(monkeypatch):
 
 
 def test_discover_unknown_platform_raises():
+    # tiktok has no provider registered -> NotImplementedError
     with pytest.raises(NotImplementedError):
-        discover("AI", platform=Platform.douyin)
+        discover("AI", platform=Platform.tiktok)
+
+
+def test_douyin_keyword_without_channel_raises():
+    from ai_clip.discover.social import DouyinProvider
+
+    with pytest.raises(NotImplementedError):
+        DouyinProvider().search("麻将", channel=None, since_days=7, limit=10)
+
+
+def test_douyin_channel_listing(monkeypatch):
+    from ai_clip.discover.social import DouyinProvider
+
+    entries = {"entries": [
+        {"webpage_url": "https://v.douyin.com/a", "title": "牌局", "duration": 30,
+         "view_count": 5000, "like_count": 400, "timestamp": None},
+    ]}
+
+    class FakeYDL:
+        def __init__(self, *a, **k): ...
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def extract_info(self, *a, **k): return entries
+
+    import yt_dlp
+    monkeypatch.setattr(yt_dlp, "YoutubeDL", FakeYDL)
+    out = DouyinProvider().search("x", channel="https://www.douyin.com/user/X",
+                                  since_days=7, limit=10)
+    assert len(out) == 1
+    assert out[0].platform == Platform.douyin
+    assert out[0].view_count == 5000
