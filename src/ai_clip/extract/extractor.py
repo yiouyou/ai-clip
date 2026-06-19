@@ -12,13 +12,31 @@ from ai_clip.core.config import WhisperConfig
 from ai_clip.core.device import whisper_runtime
 from ai_clip.core.ffmpeg import extract_audio
 from ai_clip.core.models import Clip, Transcript, TranscriptSegment
+from ai_clip.extract.subtitles import fetch_subtitle_segments
 
 
-def extract(clip: Clip, out_dir: str | Path, whisper: WhisperConfig) -> Transcript:
+def extract(
+    clip: Clip,
+    out_dir: str | Path,
+    whisper: WhisperConfig,
+    use_subtitles: bool = False,
+) -> Transcript:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     audio_path = out / f"{clip.clip_id}.wav"
+    # Audio is still extracted: it's the reference for voice cloning later.
     extract_audio(clip.video_path, audio_path)
+
+    if use_subtitles:
+        result = fetch_subtitle_segments(clip.source_url, out)
+        if result:
+            segments, language = result
+            text = " ".join(s.text for s in segments).strip()
+            return Transcript(
+                clip_id=clip.clip_id, language=language, text=text,
+                segments=segments, audio_path=str(audio_path),
+            )
+        # No usable subtitles -> fall back to whisper.
 
     segments, language, text = _transcribe(audio_path, whisper)
     return Transcript(

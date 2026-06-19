@@ -9,15 +9,21 @@ from ai_clip.core.models import Shot, Storyboard, VideoFormat
 from ai_clip.produce.formats.base import GenerateArgs, formula_block, intent_block
 
 SYSTEM = (
-    "You are a 解说/二创 editor. Given a timestamped transcript of a source video, "
-    "you pick the most engaging spans to keep and write fresh narration for each. "
-    "Spans must stay within the transcript's time range. Write in the source language."
+    "You are a 解说/二创 editor who condenses long videos into tight viral shorts. "
+    "Given a timestamped transcript, you pick the highest-impact moments and write "
+    "fresh narration for each. Spans must stay within the transcript's time range. "
+    "Write in the source language."
 )
 
-USER = """Re-edit this source video into a tighter short with new narration.
+USER = """Condense this {source_min:.0f}-minute source video into a ~{duration}s short \
+({ratio:.0f}:1 compression) with new narration.
 
 Theme/angle: {theme}
-Target length: ~{duration} seconds, about {n_shots} kept spans.
+Pick about {n_shots} of the BEST moments — the strongest hook, most quotable lines,
+sharpest opinions, conflicts, surprises or emotional peaks — spread across the WHOLE
+video (not just the opening). Keep each span SHORT (about 3-8 seconds) and
+non-contiguous. The first span must be a scroll-stopping hook. The kept spans should
+together sum to roughly {duration} seconds.
 {intent}
 {formula}
 
@@ -44,11 +50,13 @@ def generate(args: GenerateArgs) -> Storyboard:
         raise ValueError("remix format requires a transcript with segments")
 
     max_end = max(s.end for s in args.transcript.segments)
+    ratio = max(max_end / args.duration_sec, 1.0) if args.duration_sec else 1.0
     reply = llm_mod.chat(
         args.cfg,
         system=SYSTEM,
         user=USER.format(
             theme=args.theme, duration=args.duration_sec, n_shots=args.n_shots,
+            source_min=max_end / 60.0, ratio=ratio,
             intent=intent_block(args), formula=formula_block(args.analysis),
             segments=_segments_text(args.transcript),
         ),

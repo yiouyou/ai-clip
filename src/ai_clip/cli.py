@@ -60,10 +60,11 @@ def download(
 @app.command()
 def extract(
     project: str = typer.Option(..., "--project", "-p"),
+    subs: bool = typer.Option(False, "--subs", help="use the video's subtitles instead of whisper"),
     config: str = typer.Option(None, "--config"),
 ):
-    """Split audio and transcribe with faster-whisper."""
-    t = pipeline.run_extract(_cfg(config), project)
+    """Transcribe via faster-whisper, or reuse the video's subtitles with --subs."""
+    t = pipeline.run_extract(_cfg(config), project, use_subtitles=subs)
     console.print(f"[green]transcribed[/] {len(t.segments)} segments, lang={t.language}")
 
 
@@ -196,6 +197,7 @@ def remix(
     stance: str = typer.Option("", "--stance"),
     product: str = typer.Option(None, "--product"),
     captions: bool = typer.Option(False, "--captions"),
+    subs: bool = typer.Option(False, "--subs", help="use the video's subtitles instead of whisper"),
     duration: float = typer.Option(30.0, "--duration"),
     shots: int = typer.Option(6, "--shots"),
     config: str = typer.Option(None, "--config"),
@@ -206,6 +208,7 @@ def remix(
     r = workflows.remix(
         cfg, project, url, theme, intent=intent, stance=stance,
         product=load_product(product), duration=duration, n_shots=shots,
+        use_subtitles=subs,
     )
     console.print(f"[green]remix done[/] -> {r['output']}")
 

@@ -36,11 +36,12 @@ def remix(
     intent: Intent = Intent.info, stance: str = "",
     product: ProductProfile | None = None,
     duration: float = 30.0, n_shots: int = 6,
+    use_subtitles: bool = False,
 ) -> dict:
     """W3 二创(全自动): download -> extract -> analyze -> remix storyboard ->
     voiceover(clone) -> assemble. Needs no manual assets."""
     pipeline.run_download(cfg, project, url)
-    pipeline.run_extract(cfg, project)
+    pipeline.run_extract(cfg, project, use_subtitles=use_subtitles)
     pipeline.run_analyze(cfg, project, intent)
     pipeline.run_storyboard(
         cfg, project, theme, fmt=VideoFormat.remix, intent=intent,

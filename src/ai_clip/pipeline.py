@@ -57,10 +57,12 @@ def run_download(cfg: Config, project: str, url: str) -> Clip:
     return clip
 
 
-def run_extract(cfg: Config, project: str) -> Transcript:
+def run_extract(
+    cfg: Config, project: str, use_subtitles: bool = False
+) -> Transcript:
     pp = _paths(cfg, project)
     clip = read_model(pp.clip_json, Clip)
-    transcript = extract_stage(clip, pp.root, cfg.whisper)
+    transcript = extract_stage(clip, pp.root, cfg.whisper, use_subtitles=use_subtitles)
     write_model(pp.transcript_json, transcript)
     return transcript
 
