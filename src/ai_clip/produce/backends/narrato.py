@@ -14,6 +14,7 @@ produces source spans + narration we can hand off here.
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -26,16 +27,21 @@ class NarratoError(RuntimeError):
     pass
 
 
+def _hhmmss(seconds: float) -> str:
+    s = int(round(seconds))
+    return f"{s // 3600:02d}:{(s % 3600) // 60:02d}:{s % 60:02d}"
+
+
 def storyboard_to_clip_json(sb: Storyboard) -> list[dict]:
     """Map a remix Storyboard (source spans + narration) to NarratoAI's clip
-    script shape (timestamp range + narration per segment)."""
+    script shape: {picture, timestamp 'HH:MM:SS-HH:MM:SS', narration, OST}.
+    OST=0 means narrate with TTS over the cut span (解说)."""
     out = []
-    for shot in sb.shots:
-        if not shot.is_source_segment:
-            continue
+    for i, shot in enumerate(s for s in sb.shots if s.is_source_segment):
         out.append({
-            "timestamp": f"{shot.source_start:.1f}-{shot.source_end:.1f}",
-            "picture": "",
+            "_id": i + 1,
+            "picture": shot.voiceover,
+            "timestamp": f"{_hhmmss(shot.source_start)}-{_hhmmss(shot.source_end)}",
             "narration": shot.voiceover,
             "OST": 0,
         })
@@ -78,4 +84,6 @@ class NarratoBackend:
         produced = Path(json.loads(result)["output"])
         if not produced.exists():
             raise NarratoError(f"NarratoAI reported success but no file at {produced}")
-        return produced
+        out.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(produced, out)
+        return out

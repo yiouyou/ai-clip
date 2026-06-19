@@ -49,8 +49,16 @@ class _SocialProvider:
 
         opts = {"quiet": True, "no_warnings": True, "noprogress": True,
                 "playlistend": limit}
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(channel, download=False)
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(channel, download=False)
+        except yt_dlp.utils.DownloadError as exc:
+            # yt-dlp does not support douyin/kuaishou user-page listing (verified:
+            # the /user/ URL returns "Unsupported URL"). Fail with clear guidance.
+            raise NotImplementedError(
+                f"{self.platform} channel listing is not supported by yt-dlp "
+                f"({channel}). Pass a direct video URL to `ai-clip download` instead."
+            ) from exc
 
         entries = info.get("entries", [info]) if info else []
         out: list[Candidate] = []

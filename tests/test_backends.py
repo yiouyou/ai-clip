@@ -79,8 +79,10 @@ def test_storyboard_to_clip_json_maps_source_spans():
     ])
     clips = storyboard_to_clip_json(sb)
     assert len(clips) == 1
-    assert clips[0]["timestamp"] == "1.0-4.0"
+    assert clips[0]["timestamp"] == "00:00:01-00:00:04"
     assert clips[0]["narration"] == "一"
+    assert clips[0]["_id"] == 1
+    assert clips[0]["OST"] == 0
 
 
 def test_narrato_missing_repo_raises(tmp_path):
