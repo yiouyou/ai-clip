@@ -17,6 +17,7 @@ from ai_clip.core.models import Shot, Storyboard
 
 _RESOLUTIONS = {"9:16": (1080, 1920), "16:9": (1920, 1080), "1:1": (1080, 1080)}
 _FPS = 30
+_BG_COLOR = "black"  # fallback background for narration-only shots (no b-roll)
 
 
 class MissingAssetsError(RuntimeError):
@@ -26,16 +27,16 @@ class MissingAssetsError(RuntimeError):
 
 
 def check_assets(sb: Storyboard, assets_dir: Path) -> list[str]:
-    """Return the list of shots that have no usable input. Source-segment (remix)
-    shots are satisfied by the source clip, not files in assets/."""
+    """Return shots that *expect* an asset but are missing it. A shot that expects
+    no files (source segment, or a narration-only talking-head line) is fine — it
+    renders from the source clip or a solid background respectively."""
     missing: list[str] = []
     for shot in sb.shots:
-        if shot.is_source_segment:
+        expected = shot.expected_files()
+        if not expected:
             continue
-        has_video = shot.video_file and (assets_dir / shot.video_file).exists()
-        has_image = shot.image_file and (assets_dir / shot.image_file).exists()
-        if not (has_video or has_image):
-            missing.append(f"shot_{shot.index:02d} ({shot.video_file}|{shot.image_file})")
+        if not any((assets_dir / f).exists() for f in expected):
+            missing.append(f"shot_{shot.index:02d} ({'|'.join(expected)})")
     return missing
 
 
@@ -99,19 +100,22 @@ def _normalize_shot(
     voice_path = (voice_dir / f"shot_{shot.index:02d}.wav") if voice_dir else None
     duration = _shot_duration(shot, voice_path)
 
+    video = assets_dir / shot.video_file if shot.video_file else None
+    image = assets_dir / shot.image_file if shot.image_file else None
     if shot.is_source_segment:
         # Remix: cut the span out of the source clip.
         args = [
             "ffmpeg", "-y", "-ss", str(shot.source_start), "-to", str(shot.source_end),
             "-i", str(source_video),
         ]
+    elif video and video.exists():
+        args = ["ffmpeg", "-y", "-stream_loop", "-1", "-i", str(video)]
+    elif image and image.exists():
+        args = ["ffmpeg", "-y", "-loop", "1", "-i", str(image)]
     else:
-        video = assets_dir / shot.video_file if shot.video_file else None
-        if video and video.exists():
-            args = ["ffmpeg", "-y", "-stream_loop", "-1", "-i", str(video)]
-        else:
-            image = assets_dir / shot.image_file
-            args = ["ffmpeg", "-y", "-loop", "1", "-i", str(image)]
+        # Narration-only shot (e.g. talking-head line with no b-roll): solid bg.
+        args = ["ffmpeg", "-y", "-f", "lavfi",
+                "-i", f"color=c={_BG_COLOR}:s={w}x{h}:r={_FPS}"]
 
     if voice_path and voice_path.exists():
         # Narration track; pad with silence so the shot reaches `duration`.
