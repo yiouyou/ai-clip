@@ -2,9 +2,9 @@ from ai_clip.core import billing
 
 
 def test_llm_cost_known_model():
-    # deepseek-v4-pro = (0.28, 0.42) per 1M
-    assert billing.llm_cost("deepseek-v4-pro", 1_000_000, 0) == 0.28
-    assert round(billing.llm_cost("deepseek-v4-pro", 0, 1_000_000), 4) == 0.42
+    # deepseek-v4-pro = (0.435, 0.87) per 1M
+    assert billing.llm_cost("deepseek-v4-pro", 1_000_000, 0) == 0.435
+    assert round(billing.llm_cost("deepseek-v4-pro", 0, 1_000_000), 4) == 0.87
 
 
 def test_llm_cost_unknown_model_is_zero():
@@ -27,8 +27,8 @@ def test_account_records_and_summarizes(tmp_path):
     assert s["total"]["calls"] == 2
     assert s["total"]["input_tokens"] == 1_000_000
     assert s["total"]["chars"] == 500
-    # 0.28 + 0.42 = 0.70 for the llm call; mimo price 0 by default
-    assert round(s["by_stage"]["analyze"], 4) == 0.70
+    # 0.435 + 0.87 = 1.305 for the llm call
+    assert round(s["by_stage"]["analyze"], 4) == 1.305
     assert "deepseek-v4-pro" in s["by_model"]
 
 

@@ -17,14 +17,20 @@ from contextvars import ContextVar
 from pathlib import Path
 
 # USD per 1,000,000 tokens: model -> (input, output). Edit to match your plan.
+# Rates as of June 2026 (verify on the provider's pricing page):
+#   deepseek-v4-pro: current official $0.435/$0.87 (standard rate $1.74/$3.48)
+#   gpt-5.5:         standard $5.00/$30.00 (batch $2.50/$15.00, cached input $0.50)
 LLM_PRICES: dict[str, tuple[float, float]] = {
-    "deepseek-v4-pro": (0.28, 0.42),
-    "gpt-5.5": (1.25, 10.00),
+    "deepseek-v4-pro": (0.435, 0.87),
+    "gpt-5.5": (5.00, 30.00),
 }
 _LLM_FALLBACK = (0.0, 0.0)
 
 # USD per 1,000,000 characters for TTS providers.
-TTS_PRICES: dict[str, float] = {"mimo": 0.0}
+# NOTE: MiMo's TTS price is not publicly itemized (TTS was promo-free, then folded
+# into the MiMo V2.5 series billing on 2026-06-18). This is an ESTIMATE based on the
+# MiMo V2.5 ~$1 / 1M input rate; confirm and adjust for your plan.
+TTS_PRICES: dict[str, float] = {"mimo": 1.0}
 
 _ctx: ContextVar[tuple[Path, str] | None] = ContextVar("aiclip_billing", default=None)
 
