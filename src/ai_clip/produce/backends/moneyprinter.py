@@ -14,7 +14,8 @@ import httpx
 
 from ai_clip.produce.backends.base import ProduceSpec
 
-_ASPECT = {"9:16": "竖屏 9:16（抖音视频）", "16:9": "横屏 16:9（西瓜视频）"}
+_VALID_ASPECT = {"9:16", "16:9", "1:1"}
+_DEFAULT_VOICE = "zh-CN-XiaoxiaoNeural-Female"  # MPT edge-tts voice id
 
 
 class MoneyPrinterError(RuntimeError):
@@ -37,14 +38,14 @@ class MoneyPrinterBackend:
             return False
 
     def _request_body(self, spec: ProduceSpec) -> dict:
+        aspect = spec.aspect_ratio if spec.aspect_ratio in _VALID_ASPECT else "9:16"
         body = {
             "video_subject": spec.theme,
-            "video_aspect": _ASPECT.get(spec.aspect_ratio, _ASPECT["9:16"]),
+            "video_aspect": aspect,
             "subtitle_enabled": spec.subtitle,
             "paragraph_number": spec.paragraphs,
+            "voice_name": spec.voice_name or _DEFAULT_VOICE,
         }
-        if spec.voice_name:
-            body["voice_name"] = spec.voice_name
         if spec.language:
             body["video_language"] = spec.language
         return body
@@ -75,7 +76,8 @@ class MoneyPrinterBackend:
             data = httpx.get(url, timeout=30.0).json().get("data", {})
             videos = data.get("videos") or data.get("combined_videos")
             if videos:
-                return videos[0]
+                url = videos[0]
+                return url if url.startswith("http") else f"{self.base_url}{url}"
             if data.get("state", 1) < 0:
                 raise MoneyPrinterError(f"task {task_id} failed: {data}")
             time.sleep(5.0)

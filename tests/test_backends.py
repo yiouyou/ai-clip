@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from ai_clip.produce.backends import MoneyPrinterBackend, ProduceSpec
-from ai_clip.produce.backends.moneyprinter import MoneyPrinterError, _ASPECT
+from ai_clip.produce.backends.moneyprinter import MoneyPrinterError
 
 
 def test_request_body_maps_spec():
@@ -11,7 +11,7 @@ def test_request_body_maps_spec():
     body = be._request_body(ProduceSpec(theme="麻将", out_path=Path("o.mp4"),
                                         aspect_ratio="9:16", voice_name="V", language="zh"))
     assert body["video_subject"] == "麻将"
-    assert body["video_aspect"] == _ASPECT["9:16"]
+    assert body["video_aspect"] == "9:16"
     assert body["voice_name"] == "V"
     assert body["video_language"] == "zh"
     assert body["subtitle_enabled"] is True
