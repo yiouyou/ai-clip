@@ -67,3 +67,25 @@ def test_produce_raises_on_failed_state(monkeypatch, tmp_path):
     monkeypatch.setattr(m.time, "sleep", lambda s: None)
     with pytest.raises(MoneyPrinterError):
         MoneyPrinterBackend("http://x").produce(ProduceSpec(theme="t", out_path=tmp_path / "o.mp4"))
+
+
+def test_storyboard_to_clip_json_maps_source_spans():
+    from ai_clip.core.models import Shot, Storyboard
+    from ai_clip.produce.backends import storyboard_to_clip_json
+
+    sb = Storyboard(project="p", shots=[
+        Shot(index=1, source_start=1.0, source_end=4.0, voiceover="一"),
+        Shot(index=2, voiceover="无源,跳过"),  # not a source segment -> skipped
+    ])
+    clips = storyboard_to_clip_json(sb)
+    assert len(clips) == 1
+    assert clips[0]["timestamp"] == "1.0-4.0"
+    assert clips[0]["narration"] == "一"
+
+
+def test_narrato_missing_repo_raises(tmp_path):
+    from ai_clip.produce.backends.narrato import NarratoBackend, NarratoError
+
+    be = NarratoBackend(tmp_path / "nope", "python")
+    with pytest.raises(NarratoError):
+        be.produce_remix("src.mp4", [{"timestamp": "0-1", "narration": "x"}], tmp_path / "o.mp4")
