@@ -10,7 +10,9 @@ from ai_clip.core.config import Config
 from ai_clip.core.models import (
     CandidateList,
     Clip,
+    Intent,
     Platform,
+    ProductProfile,
     Storyboard,
     Transcript,
     ViralAnalysis,
@@ -72,10 +74,12 @@ def run_export(cfg: Config, project: str) -> tuple[object, object]:
     )
 
 
-def run_analyze(cfg: Config, project: str) -> ViralAnalysis:
+def run_analyze(
+    cfg: Config, project: str, intent: Intent = Intent.info
+) -> ViralAnalysis:
     pp = _paths(cfg, project)
     transcript = read_model(pp.transcript_json, Transcript)
-    analysis = analyze_stage(transcript, cfg.llm)
+    analysis = analyze_stage(transcript, cfg.llm, intent)
     write_model(pp.analysis_json, analysis)
     return analysis
 
@@ -85,6 +89,9 @@ def run_storyboard(
     project: str,
     theme: str,
     fmt: VideoFormat = VideoFormat.talking_head,
+    intent: Intent = Intent.info,
+    stance: str = "",
+    product: ProductProfile | None = None,
     duration_sec: float = 30.0,
     n_shots: int = 6,
 ) -> Storyboard:
@@ -106,6 +113,9 @@ def run_storyboard(
         fmt=fmt,
         analysis=analysis,
         transcript=transcript,
+        intent=intent,
+        stance=stance,
+        product=product,
         duration_sec=duration_sec,
         aspect_ratio=cfg.aspect_ratio,
         n_shots=n_shots,

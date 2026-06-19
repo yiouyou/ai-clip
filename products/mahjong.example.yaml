@@ -1,0 +1,10 @@
+# Example product profile for the `sales` intent.
+# Use with: ai-clip remix <url> --intent sales --product products/mahjong.yaml ...
+name: 麻将手风预报
+description: 一款预测当日麻将手气与出牌建议的小程序
+audience: 爱打麻将、信手气玄学的中青年牌友
+selling_points:
+  - 每日手气评分与吉时提醒
+  - 基于历史牌局的出牌建议
+  - 一键分享战绩到牌友群
+cta: 搜索"麻将手风预报"小程序，今天就测测你的手气

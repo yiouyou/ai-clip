@@ -99,6 +99,19 @@ def load_dotenv(path: str | Path = ".env") -> None:
         os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
+def load_product(path: str | Path | None):
+    """Load a reusable product profile (YAML) for the sales intent, or None."""
+    from ai_clip.core.models import ProductProfile
+
+    if not path:
+        return None
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"product profile not found: {p}")
+    data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+    return ProductProfile.model_validate(data)
+
+
 def load_config(path: str | Path | None = None) -> Config:
     load_dotenv()
     source = Path(path) if path else _DEFAULT_CONFIG

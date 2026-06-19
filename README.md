@@ -89,6 +89,22 @@ One command chains the stages end to end:
 
 `discover` finds source URLs to feed these: `ai-clip discover "AI" -p P --top 5`.
 
+### Intent (info / emotion / sales)
+
+`--intent` steers analyze + storyboard:
+
+- `info` (default) — knowledge-first, neutral explainer.
+- `emotion` — an opinionated take: extract a **stance + emotional charge** from the
+  news/event and express it (not neutral reporting). Optional `--stance "..."` to
+  fix the angle; otherwise the LLM picks one.
+- `sales` — product promo (pain → agitate → product → proof → CTA). Pass a reusable
+  product profile with `--product products/mine.yaml` (see `products/*.example.yaml`).
+
+```bash
+ai-clip remix <url> --theme "锐评本周AI" --intent emotion -p p1
+ai-clip original --theme "麻友手气" --intent sales --product products/mahjong.yaml -p p2
+```
+
 ## Voiceover (MiMo TTS + voice cloning)
 
 `ai-clip voiceover` synthesizes each shot's narration with Xiaomi

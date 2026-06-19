@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from ai_clip.core import llm as llm_mod
 from ai_clip.core.models import Shot, Storyboard, VideoFormat
-from ai_clip.produce.formats.base import GenerateArgs, formula_block
+from ai_clip.produce.formats.base import GenerateArgs, formula_block, intent_block
 
 SYSTEM = (
     "You are a 解说/二创 editor. Given a timestamped transcript of a source video, "
@@ -18,6 +18,7 @@ USER = """Re-edit this source video into a tighter short with new narration.
 
 Theme/angle: {theme}
 Target length: ~{duration} seconds, about {n_shots} kept spans.
+{intent}
 {formula}
 
 Timestamped transcript (seconds):
@@ -48,7 +49,7 @@ def generate(args: GenerateArgs) -> Storyboard:
         system=SYSTEM,
         user=USER.format(
             theme=args.theme, duration=args.duration_sec, n_shots=args.n_shots,
-            formula=formula_block(args.analysis),
+            intent=intent_block(args), formula=formula_block(args.analysis),
             segments=_segments_text(args.transcript),
         ),
     )

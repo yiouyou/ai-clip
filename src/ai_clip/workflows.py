@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from ai_clip import pipeline
 from ai_clip.core.config import Config
-from ai_clip.core.models import Platform, VideoFormat
+from ai_clip.core.models import Intent, Platform, ProductProfile, VideoFormat
 from ai_clip.core.paths import ProjectPaths
 from ai_clip.produce.assemble import check_assets
 
@@ -21,24 +21,31 @@ def transcribe(cfg: Config, project: str, url: str) -> dict:
     return {"workflow": "transcribe", "srt": str(srt), "txt": str(txt)}
 
 
-def teardown(cfg: Config, project: str, url: str) -> dict:
-    """W2 爆款拆解: download -> extract -> analyze."""
+def teardown(
+    cfg: Config, project: str, url: str, intent: Intent = Intent.info
+) -> dict:
+    """W2 爆款拆解: download -> extract -> analyze (intent-aware)."""
     pipeline.run_download(cfg, project, url)
     pipeline.run_extract(cfg, project)
-    analysis = pipeline.run_analyze(cfg, project)
+    analysis = pipeline.run_analyze(cfg, project, intent)
     return {"workflow": "teardown", "hook": analysis.hook, "formula": analysis.formula}
 
 
 def remix(
     cfg: Config, project: str, url: str, theme: str,
+    intent: Intent = Intent.info, stance: str = "",
+    product: ProductProfile | None = None,
     duration: float = 30.0, n_shots: int = 6,
 ) -> dict:
     """W3 二创(全自动): download -> extract -> analyze -> remix storyboard ->
     voiceover(clone) -> assemble. Needs no manual assets."""
     pipeline.run_download(cfg, project, url)
     pipeline.run_extract(cfg, project)
-    pipeline.run_analyze(cfg, project)
-    pipeline.run_storyboard(cfg, project, theme, VideoFormat.remix, duration, n_shots)
+    pipeline.run_analyze(cfg, project, intent)
+    pipeline.run_storyboard(
+        cfg, project, theme, fmt=VideoFormat.remix, intent=intent,
+        stance=stance, product=product, duration_sec=duration, n_shots=n_shots,
+    )
     pipeline.run_voiceover(cfg, project)
     out = pipeline.run_assemble(cfg, project)
     return {"workflow": "remix", "output": str(out)}
@@ -47,6 +54,8 @@ def remix(
 def original(
     cfg: Config, project: str, theme: str,
     fmt: VideoFormat = VideoFormat.talking_head,
+    intent: Intent = Intent.info, stance: str = "",
+    product: ProductProfile | None = None,
     duration: float = 30.0, n_shots: int = 6,
 ) -> dict:
     """W4 原创 / W5 全自动本地: storyboard -> assets(ComfyUI if available) ->
@@ -55,7 +64,10 @@ def original(
     if fmt == VideoFormat.remix:
         raise ValueError("remix needs a source clip; use the remix workflow")
 
-    sb = pipeline.run_storyboard(cfg, project, theme, fmt, duration, n_shots)
+    sb = pipeline.run_storyboard(
+        cfg, project, theme, fmt=fmt, intent=intent, stance=stance,
+        product=product, duration_sec=duration, n_shots=n_shots,
+    )
     generated = pipeline.run_assets(cfg, project)
     pipeline.run_voiceover(cfg, project)
 

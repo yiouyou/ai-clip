@@ -11,7 +11,14 @@ from __future__ import annotations
 from pathlib import Path
 
 from ai_clip.core.config import LLMConfig
-from ai_clip.core.models import Storyboard, Transcript, ViralAnalysis, VideoFormat
+from ai_clip.core.models import (
+    Intent,
+    ProductProfile,
+    Storyboard,
+    Transcript,
+    ViralAnalysis,
+    VideoFormat,
+)
 from ai_clip.produce.formats import get_generator
 from ai_clip.produce.formats.base import GenerateArgs
 
@@ -23,14 +30,17 @@ def generate_storyboard(
     fmt: VideoFormat = VideoFormat.talking_head,
     analysis: ViralAnalysis | None = None,
     transcript: Transcript | None = None,
+    intent: Intent = Intent.info,
+    stance: str = "",
+    product: ProductProfile | None = None,
     duration_sec: float = 30.0,
     aspect_ratio: str = "9:16",
     n_shots: int = 6,
 ) -> Storyboard:
     args = GenerateArgs(
         project=project, theme=theme, cfg=cfg, analysis=analysis,
-        transcript=transcript, duration_sec=duration_sec,
-        aspect_ratio=aspect_ratio, n_shots=n_shots,
+        transcript=transcript, intent=intent, stance=stance, product=product,
+        duration_sec=duration_sec, aspect_ratio=aspect_ratio, n_shots=n_shots,
     )
     return get_generator(fmt)(args)
 

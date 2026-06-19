@@ -72,16 +72,40 @@ class Transcript(BaseModel):
     audio_path: str | None = None
 
 
+class Intent(StrEnum):
+    info = "info"  # knowledge-first (neutral, explain)
+    emotion = "emotion"  # opinionated take: stance + emotion from news/events
+    sales = "sales"  # product promo: pain -> agitate -> product -> proof -> CTA
+
+
+class ProductProfile(BaseModel):
+    """Reusable product description for the `sales` intent (loaded from YAML)."""
+
+    name: str = ""
+    description: str = ""
+    audience: str = ""
+    selling_points: list[str] = Field(default_factory=list)
+    cta: str = ""
+
+
 class ViralAnalysis(BaseModel):
-    """Output of the analyze stage: the reusable "why it worked" formula."""
+    """Output of the analyze stage: the reusable "why it worked" formula.
+
+    Intent-specific fields are populated only for the matching intent."""
 
     clip_id: str
+    intent: Intent = Intent.info
     hook: str = ""
     structure: list[str] = Field(default_factory=list)
     emotion_curve: list[str] = Field(default_factory=list)
     formula: str = ""
     scores: dict[str, float] = Field(default_factory=dict)
     notes: str = ""
+    # emotion intent:
+    stance: str = ""
+    # sales intent:
+    pain_points: list[str] = Field(default_factory=list)
+    objections: list[str] = Field(default_factory=list)
 
 
 class VideoFormat(StrEnum):

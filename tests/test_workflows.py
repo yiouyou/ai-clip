@@ -31,7 +31,7 @@ def test_teardown_order(monkeypatch):
     monkeypatch.setattr(workflows.pipeline, "run_extract", _record(calls, "extract"))
     monkeypatch.setattr(
         workflows.pipeline, "run_analyze",
-        lambda c, p: ViralAnalysis(clip_id="x", hook="H", formula="F"),
+        lambda c, p, i=None: ViralAnalysis(clip_id="x", hook="H", formula="F"),
     )
     r = workflows.teardown(Config(), "p", "url")
     assert calls == ["download", "extract"]

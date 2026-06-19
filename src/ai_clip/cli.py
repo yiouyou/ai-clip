@@ -7,9 +7,9 @@ from __future__ import annotations
 import typer
 from rich.console import Console
 
-from ai_clip.core.config import load_config
+from ai_clip.core.config import load_config, load_product
 from ai_clip.produce.assemble import MissingAssetsError, check_assets
-from ai_clip.core.models import Platform, Storyboard, VideoFormat
+from ai_clip.core.models import Intent, Platform, Storyboard, VideoFormat
 from ai_clip.core.paths import ProjectPaths, read_model
 from ai_clip import pipeline, workflows
 
@@ -80,11 +80,12 @@ def export(
 @app.command()
 def analyze(
     project: str = typer.Option(..., "--project", "-p"),
+    intent: Intent = typer.Option(Intent.info, "--intent", "-i"),
     config: str = typer.Option(None, "--config"),
 ):
-    """Reverse-engineer the viral formula via LLM."""
-    a = pipeline.run_analyze(_cfg(config), project)
-    console.print(f"[green]analyzed[/] hook: {a.hook[:80]}")
+    """Reverse-engineer the viral formula via LLM (intent: info|emotion|sales)."""
+    a = pipeline.run_analyze(_cfg(config), project, intent)
+    console.print(f"[green]analyzed[/] ({a.intent}) hook: {a.hook[:80]}")
 
 
 @app.command()
@@ -92,13 +93,19 @@ def storyboard(
     project: str = typer.Option(..., "--project", "-p"),
     theme: str = typer.Option(..., "--theme"),
     fmt: VideoFormat = typer.Option(VideoFormat.talking_head, "--format", "-f"),
+    intent: Intent = typer.Option(Intent.info, "--intent", "-i"),
+    stance: str = typer.Option("", "--stance"),
+    product: str = typer.Option(None, "--product"),
     duration: float = typer.Option(30.0, "--duration"),
     shots: int = typer.Option(6, "--shots"),
     config: str = typer.Option(None, "--config"),
 ):
     """Generate a storyboard for the chosen format (talking_head|slideshow|remix|montage)."""
     cfg = _cfg(config)
-    sb = pipeline.run_storyboard(cfg, project, theme, fmt, duration, shots)
+    sb = pipeline.run_storyboard(
+        cfg, project, theme, fmt=fmt, intent=intent, stance=stance,
+        product=load_product(product), duration_sec=duration, n_shots=shots,
+    )
     pp = ProjectPaths(cfg.data_dir, project)
     console.print(f"[green]storyboard[/] ({sb.format}) {len(sb.shots)} shots -> {pp.storyboard_md}")
     if sb.format == VideoFormat.remix:
@@ -168,10 +175,11 @@ def transcribe(
 def teardown(
     url: str,
     project: str = typer.Option(..., "--project", "-p"),
+    intent: Intent = typer.Option(Intent.info, "--intent", "-i"),
     config: str = typer.Option(None, "--config"),
 ):
-    """W2 爆款拆解: download -> extract -> analyze."""
-    r = workflows.teardown(_cfg(config), project, url)
+    """W2 爆款拆解: download -> extract -> analyze (intent: info|emotion|sales)."""
+    r = workflows.teardown(_cfg(config), project, url, intent)
     console.print(f"[green]teardown[/] hook: {r['hook'][:80]}")
     console.print(f"formula: {r['formula'][:120]}")
 
@@ -181,12 +189,18 @@ def remix(
     url: str,
     theme: str = typer.Option(..., "--theme"),
     project: str = typer.Option(..., "--project", "-p"),
+    intent: Intent = typer.Option(Intent.info, "--intent", "-i"),
+    stance: str = typer.Option("", "--stance"),
+    product: str = typer.Option(None, "--product"),
     duration: float = typer.Option(30.0, "--duration"),
     shots: int = typer.Option(6, "--shots"),
     config: str = typer.Option(None, "--config"),
 ):
     """W3 二创(全自动): download -> ... -> remix storyboard -> cloned voiceover -> mp4."""
-    r = workflows.remix(_cfg(config), project, url, theme, duration, shots)
+    r = workflows.remix(
+        _cfg(config), project, url, theme, intent=intent, stance=stance,
+        product=load_product(product), duration=duration, n_shots=shots,
+    )
     console.print(f"[green]remix done[/] -> {r['output']}")
 
 
@@ -195,6 +209,9 @@ def original(
     theme: str = typer.Option(..., "--theme"),
     project: str = typer.Option(..., "--project", "-p"),
     fmt: VideoFormat = typer.Option(VideoFormat.talking_head, "--format", "-f"),
+    intent: Intent = typer.Option(Intent.info, "--intent", "-i"),
+    stance: str = typer.Option("", "--stance"),
+    product: str = typer.Option(None, "--product"),
     duration: float = typer.Option(30.0, "--duration"),
     shots: int = typer.Option(6, "--shots"),
     config: str = typer.Option(None, "--config"),
@@ -203,7 +220,10 @@ def original(
     if fmt == VideoFormat.remix:
         console.print("[red]remix format needs a source clip; use `ai-clip remix`.[/]")
         raise typer.Exit(1)
-    r = workflows.original(_cfg(config), project, theme, fmt, duration, shots)
+    r = workflows.original(
+        _cfg(config), project, theme, fmt=fmt, intent=intent, stance=stance,
+        product=load_product(product), duration=duration, n_shots=shots,
+    )
     if r["status"] == "done":
         console.print(f"[green]original done[/] -> {r['output']}")
     else:
