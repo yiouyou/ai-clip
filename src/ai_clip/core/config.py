@@ -21,7 +21,8 @@ class WhisperConfig(BaseModel):
 class LLMConfig(BaseModel):
     base_url: str = "https://api.deepseek.com"
     api_key: str = ""
-    model: str = "deepseek-chat"
+    # DeepSeek: deepseek-v4-pro | OpenAI: gpt-5.5 (set to match base_url).
+    model: str = "deepseek-v4-pro"
 
 
 class AssetsConfig(BaseModel):

@@ -11,7 +11,7 @@ whisper:
 
 llm:
   base_url: https://api.deepseek.com
-  model: deepseek-chat
+  model: deepseek-v4-pro   # OpenAI: set base_url to api.openai.com + model gpt-5.5
 
 assets:
   image_provider: auto        # auto|comfyui|prompt_only
