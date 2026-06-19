@@ -6,37 +6,13 @@ from __future__ import annotations
 
 from ai_clip.core import llm as llm_mod
 from ai_clip.core.models import Shot, Storyboard, VideoFormat
-from ai_clip.produce.formats.base import GenerateArgs, formula_block, intent_block
-
-SYSTEM = (
-    "You are a 解说/二创 editor who condenses long videos into tight viral shorts. "
-    "Given a timestamped transcript, you pick the highest-impact moments and write "
-    "fresh narration for each. Spans must stay within the transcript's time range. "
-    "Write in the source language."
+from ai_clip.produce.formats.base import GenerateArgs
+from ai_clip.produce.formats.prompts import (
+    REMIX_SYSTEM,
+    REMIX_USER,
+    formula_block,
+    intent_block,
 )
-
-USER = """Condense this {source_min:.0f}-minute source video into a ~{duration}s short \
-({ratio:.0f}:1 compression) with new narration.
-
-Theme/angle: {theme}
-Pick about {n_shots} of the BEST moments — the strongest hook, most quotable lines,
-sharpest opinions, conflicts, surprises or emotional peaks — spread across the WHOLE
-video (not just the opening). Keep each span SHORT (about 3-8 seconds) and
-non-contiguous. The first span must be a scroll-stopping hook. The kept spans should
-together sum to roughly {duration} seconds.
-{intent}
-{formula}
-
-Timestamped transcript (seconds):
-{segments}
-
-Return ONLY JSON:
-{{
-  "spans": [
-    {{"source_start": <float>, "source_end": <float>, "voiceover": "<new narration>"}}
-  ]
-}}
-"""
 
 
 def _segments_text(transcript) -> str:
@@ -53,8 +29,8 @@ def generate(args: GenerateArgs) -> Storyboard:
     ratio = max(max_end / args.duration_sec, 1.0) if args.duration_sec else 1.0
     reply = llm_mod.chat(
         args.cfg,
-        system=SYSTEM,
-        user=USER.format(
+        system=REMIX_SYSTEM,
+        user=REMIX_USER.format(
             theme=args.theme, duration=args.duration_sec, n_shots=args.n_shots,
             source_min=max_end / 60.0, ratio=ratio,
             intent=intent_block(args), formula=formula_block(args.analysis),

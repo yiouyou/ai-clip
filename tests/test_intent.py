@@ -6,7 +6,8 @@ from ai_clip.core import llm as llm_mod
 from ai_clip.core.config import LLMConfig
 from ai_clip.core.models import Intent, ProductProfile, Transcript, VideoFormat
 from ai_clip.produce import storyboard as sb_mod
-from ai_clip.produce.formats.base import GenerateArgs, intent_block
+from ai_clip.produce.formats.base import GenerateArgs
+from ai_clip.produce.formats.prompts import intent_block
 
 
 def test_build_user_prompt_intent_keys():

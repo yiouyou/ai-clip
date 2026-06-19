@@ -19,7 +19,6 @@ from pathlib import Path
 # USD per 1,000,000 tokens: model -> (input, output). Edit to match your plan.
 LLM_PRICES: dict[str, tuple[float, float]] = {
     "deepseek-v4-pro": (0.28, 0.42),
-    "deepseek-chat": (0.27, 1.10),
     "gpt-5.5": (1.25, 10.00),
 }
 _LLM_FALLBACK = (0.0, 0.0)
