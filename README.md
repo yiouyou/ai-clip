@@ -5,9 +5,9 @@
 一个把开源工具串成短视频流水线的**编排器**,既能**二创**(复刻爆款),也能从主题做**原创**。
 
 ```
-discover → download → extract → analyze → storyboard →(人工/ComfyUI 出素材)→ voiceover → assemble
- 选题       yt-dlp     ffmpeg+    LLM       LLM 提示词                          MiMo TTS    ffmpeg
-            爆款       whisper    拆解                                          (克隆)
+discover → download → extract → analyze → storyboard → review →(人工/ComfyUI 出素材)→ voiceover → assemble
+ 选题       yt-dlp     ffmpeg+    LLM       LLM 提示词   文案审阅                    MiMo TTS    ffmpeg
+            爆款       whisper    拆解                   (可选)                      (克隆)
 ```
 
 ai-clip 本身是个轻量编排器:负责数据契约、CLI、设备适配,把重活外包给成熟项目
@@ -73,7 +73,18 @@ ai-clip original --project promo --theme "城市夜骑 vlog 开场" --shots 5
 无需人工做素材。
 
 任意单步也可单独运行:`discover`、`download`、`extract`、`export`、`analyze`、
-`storyboard`、`status`、`voiceover`、`assemble`。
+`storyboard`、`review`、`status`、`voiceover`、`assemble`、`cost`。
+
+### 文案审阅(人工介入)
+
+`storyboard` 之后、配音/合成之前是定稿文案的暂停点。直接改 `storyboard.json` 不方便,
+所以 `review` 把它往返成一个友好的 `script.md`:机器导出 → 人工编辑 → 机器解析回。
+
+```bash
+ai-clip review -p P            # 导出 data/P/script.md(每镜头解说 + remix 的 [起-止] 时间戳)
+# 编辑 script.md:改写解说、调时间戳、删整段=删该镜头
+ai-clip review -p P --apply    # 解析回 storyboard.json(保留 asset 等其他字段)
+```
 
 ## 组合工作流
 
