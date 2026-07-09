@@ -1,8 +1,9 @@
 import pytest
+import json
 
 from ai_clip import workflows
 from ai_clip.core.config import Config
-from ai_clip.core.models import Shot, Storyboard, ViralAnalysis, VideoFormat
+from ai_clip.core.models import Clip, Intent, Platform, Shot, Storyboard, Transcript, ViralAnalysis, VideoFormat
 
 
 def _record(calls, name, ret=None):
@@ -14,18 +15,30 @@ def _record(calls, name, ret=None):
 
 def test_transcribe_order(monkeypatch, tmp_path):
     calls = []
-    monkeypatch.setattr(workflows.pipeline, "run_download", _record(calls, "download"))
-    monkeypatch.setattr(workflows.pipeline, "run_extract", _record(calls, "extract"))
+    monkeypatch.setattr(
+        workflows.pipeline,
+        "run_download",
+        _record(calls, "download", Clip(clip_id="p", source_url="url", platform=Platform.youtube, video_path="v.mp4")),
+    )
+    monkeypatch.setattr(
+        workflows.pipeline,
+        "run_extract",
+        _record(calls, "extract", Transcript(clip_id="p", language="zh", segments=[])),
+    )
     monkeypatch.setattr(
         workflows.pipeline, "run_export",
         lambda c, p: (tmp_path / "a.srt", tmp_path / "a.txt"),
     )
-    r = workflows.transcribe(Config(), "p", "url")
+    r = workflows.transcribe(Config(data_dir=str(tmp_path)), "p", "url")
     assert calls == ["download", "extract"]
     assert r["srt"].endswith("a.srt")
+    assert r["run_status"].endswith("runs\\transcribe.json") or r["run_status"].endswith("runs/transcribe.json")
+    status = json.loads((tmp_path / "p" / "runs" / "transcribe.json").read_text(encoding="utf-8"))
+    assert status["status"] == "succeeded"
+    assert [stage["name"] for stage in status["stages"]] == ["download", "extract", "export"]
 
 
-def test_teardown_order(monkeypatch):
+def test_teardown_order(monkeypatch, tmp_path):
     calls = []
     monkeypatch.setattr(workflows.pipeline, "run_download", _record(calls, "download"))
     monkeypatch.setattr(workflows.pipeline, "run_extract", _record(calls, "extract"))
@@ -33,24 +46,141 @@ def test_teardown_order(monkeypatch):
         workflows.pipeline, "run_analyze",
         lambda c, p, i=None: ViralAnalysis(clip_id="x", hook="H", formula="F"),
     )
-    r = workflows.teardown(Config(), "p", "url")
+    r = workflows.teardown(Config(data_dir=str(tmp_path)), "p", "url")
     assert calls == ["download", "extract"]
     assert r["hook"] == "H" and r["formula"] == "F"
+    assert r["run_status"].endswith("teardown.json")
 
 
-def test_remix_full_auto(monkeypatch):
+def test_source_draft_workflow_runs_pipeline_stages(monkeypatch, tmp_path):
     calls = []
-    for name in ["run_download", "run_extract", "run_analyze", "run_voiceover"]:
+
+    def fake_download(cfg, project, url):
+        calls.append(("download", project, url))
+
+    def fake_extract(cfg, project, use_subtitles=False):
+        calls.append(("extract", project, use_subtitles))
+
+    def fake_analyze(cfg, project, intent):
+        calls.append(("analyze", project, intent))
+        return ViralAnalysis(clip_id=project, intent=intent, hook="hook", formula="formula")
+
+    def fake_source_draft(cfg, project, intent=Intent.info, stance=""):
+        calls.append(("source_draft", project, intent, stance))
+        return "data/demo/source_draft.md"
+
+    monkeypatch.setattr("ai_clip.workflows.pipeline.run_download", fake_download)
+    monkeypatch.setattr("ai_clip.workflows.pipeline.run_extract", fake_extract)
+    monkeypatch.setattr("ai_clip.workflows.pipeline.run_analyze", fake_analyze)
+    monkeypatch.setattr("ai_clip.workflows.pipeline.run_source_draft", fake_source_draft)
+
+    result = workflows.source_draft(
+        Config(data_dir=str(tmp_path)),
+        "demo",
+        "https://example.com/video",
+        intent=Intent.emotion,
+        stance="complex systems",
+        use_subtitles=True,
+    )
+
+    assert result == {
+        "workflow": "source_draft",
+        "hook": "hook",
+        "draft": "data/demo/source_draft.md",
+        "run_status": str(tmp_path / "demo" / "runs" / "source_draft.json"),
+    }
+    assert calls == [
+        ("download", "demo", "https://example.com/video"),
+        ("extract", "demo", True),
+        ("analyze", "demo", Intent.emotion),
+        ("source_draft", "demo", Intent.emotion, "complex systems"),
+    ]
+
+
+def test_source_draft_can_run_research_before_draft(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr("ai_clip.workflows.pipeline.run_download", _record(calls, "download"))
+    monkeypatch.setattr("ai_clip.workflows.pipeline.run_extract", _record(calls, "extract"))
+    monkeypatch.setattr(
+        "ai_clip.workflows.pipeline.run_analyze",
+        lambda c, p, i: calls.append("analyze")
+        or ViralAnalysis(clip_id=p, intent=i, hook="hook", formula="formula"),
+    )
+    monkeypatch.setattr(
+        "ai_clip.workflows.pipeline.run_research",
+        lambda c, p, theme="": calls.append(("research", theme)) or "research.md",
+    )
+    monkeypatch.setattr(
+        "ai_clip.workflows.pipeline.run_source_draft",
+        lambda c, p, intent=Intent.info, stance="": calls.append("source_draft")
+        or "source_draft.md",
+    )
+
+    result = workflows.source_draft(
+        Config(data_dir=str(tmp_path)),
+        "demo",
+        "https://example.com/video",
+        research=True,
+        theme="biology lens",
+    )
+
+    assert result["draft"] == "source_draft.md"
+    assert calls == ["download", "extract", "analyze", ("research", "biology lens"), "source_draft"]
+
+
+def test_remix_full_auto(monkeypatch, tmp_path):
+    calls = []
+    for name in ["run_download", "run_extract", "run_analyze"]:
         monkeypatch.setattr(workflows.pipeline, name, _record(calls, name))
     monkeypatch.setattr(
+        workflows.pipeline,
+        "run_voiceover",
+        _record(calls, "run_voiceover", {}),
+    )
+    monkeypatch.setattr(
         workflows.pipeline, "run_storyboard",
-        lambda *a, **k: calls.append("run_storyboard"),
+        lambda *a, **k: calls.append("run_storyboard") or Storyboard(
+            project="p",
+            format=VideoFormat.remix,
+            shots=[Shot(index=1)],
+        ),
     )
     monkeypatch.setattr(workflows.pipeline, "run_assemble", lambda c, p: "out.mp4")
-    r = workflows.remix(Config(), "p", "url", "theme")
+    r = workflows.remix(Config(data_dir=str(tmp_path)), "p", "url", "theme")
     assert r["output"] == "out.mp4"
+    assert r["run_status"].endswith("remix.json")
     assert calls == [
         "run_download", "run_extract", "run_analyze", "run_storyboard", "run_voiceover",
+    ]
+
+
+def test_remix_can_run_research_before_storyboard(monkeypatch, tmp_path):
+    calls = []
+    for name in ["run_download", "run_extract", "run_analyze"]:
+        monkeypatch.setattr(workflows.pipeline, name, _record(calls, name))
+    monkeypatch.setattr(workflows.pipeline, "run_research", _record(calls, "run_research", "r.md"))
+    monkeypatch.setattr(workflows.pipeline, "run_voiceover", _record(calls, "run_voiceover", {}))
+    monkeypatch.setattr(
+        workflows.pipeline,
+        "run_storyboard",
+        lambda *a, **k: calls.append("run_storyboard") or Storyboard(
+            project="p",
+            format=VideoFormat.remix,
+            shots=[Shot(index=1)],
+        ),
+    )
+    monkeypatch.setattr(workflows.pipeline, "run_assemble", lambda c, p: "out.mp4")
+
+    r = workflows.remix(Config(data_dir=str(tmp_path)), "p", "url", "theme", research=True)
+
+    assert r["output"] == "out.mp4"
+    assert calls == [
+        "run_download",
+        "run_extract",
+        "run_analyze",
+        "run_research",
+        "run_storyboard",
+        "run_voiceover",
     ]
 
 
@@ -59,24 +189,51 @@ def test_original_rejects_remix():
         workflows.original(Config(), "p", "theme", fmt=VideoFormat.remix)
 
 
-def test_original_needs_assets(monkeypatch):
+def test_original_needs_assets(monkeypatch, tmp_path):
     sb = Storyboard(project="p", shots=[Shot(index=1, image_file="shot_01.png", image_prompt="x")])
     monkeypatch.setattr(workflows.pipeline, "run_storyboard", lambda *a, **k: sb)
     monkeypatch.setattr(workflows.pipeline, "run_assets", lambda c, p: 0)
     monkeypatch.setattr(workflows.pipeline, "run_voiceover", lambda c, p: {})
     monkeypatch.setattr(workflows, "check_assets", lambda sb, d: ["shot_01 (shot_01.png)"])
     monkeypatch.setattr(workflows.pipeline, "run_assemble", lambda c, p: "should_not_run")
-    r = workflows.original(Config(), "p", "theme")
+    r = workflows.original(Config(data_dir=str(tmp_path)), "p", "theme")
     assert r["status"] == "needs_assets"
     assert r["missing"] == ["shot_01 (shot_01.png)"]
+    assert r["run_status"].endswith("original.json")
 
 
-def test_original_done_when_assets_ready(monkeypatch):
+def test_original_can_run_research_before_storyboard(monkeypatch, tmp_path):
+    calls = []
+    sb = Storyboard(project="p", shots=[Shot(index=1)])
+    monkeypatch.setattr(
+        workflows.pipeline,
+        "run_research",
+        lambda c, p, theme="": calls.append(("research", theme)) or "research.md",
+    )
+    monkeypatch.setattr(
+        workflows.pipeline,
+        "run_storyboard",
+        lambda *a, **k: calls.append("storyboard") or sb,
+    )
+    monkeypatch.setattr(workflows.pipeline, "run_assets", lambda c, p: 1)
+    monkeypatch.setattr(workflows.pipeline, "run_voiceover", lambda c, p: {})
+    monkeypatch.setattr(workflows, "check_assets", lambda sb, d: [])
+    monkeypatch.setattr(workflows.pipeline, "run_assemble", lambda c, p: "out.mp4")
+
+    result = workflows.original(Config(data_dir=str(tmp_path)), "p", "theme", research=True)
+
+    assert result["status"] == "done"
+    assert calls == [("research", "theme"), "storyboard"]
+
+
+def test_original_done_when_assets_ready(monkeypatch, tmp_path):
     sb = Storyboard(project="p", shots=[Shot(index=1)])
     monkeypatch.setattr(workflows.pipeline, "run_storyboard", lambda *a, **k: sb)
     monkeypatch.setattr(workflows.pipeline, "run_assets", lambda c, p: 1)
     monkeypatch.setattr(workflows.pipeline, "run_voiceover", lambda c, p: {})
     monkeypatch.setattr(workflows, "check_assets", lambda sb, d: [])
     monkeypatch.setattr(workflows.pipeline, "run_assemble", lambda c, p: "out.mp4")
-    r = workflows.original(Config(), "p", "theme")
+    r = workflows.original(Config(data_dir=str(tmp_path)), "p", "theme")
     assert r["status"] == "done" and r["output"] == "out.mp4"
+    assert r["run_status"].endswith("original.json")
+

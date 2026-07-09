@@ -65,10 +65,22 @@ register(Tool(
     pipeline.run_analyze, {"project": "project id"},
 ))
 register(Tool(
+    "research", "Research source facts/context before storyboard.",
+    pipeline.run_research, {"project": "project id", "theme": "optional research theme"},
+))
+register(Tool(
     "storyboard", "Generate a shot list with image/video prompts for a theme.",
     pipeline.run_storyboard,
     {"project": "project id", "theme": "video theme",
      "duration_sec": "target length", "n_shots": "number of shots"},
+))
+register(Tool(
+    "source_draft", "Generate an original talking-head draft from a source transcript.",
+    pipeline.run_source_draft, {"project": "project id", "intent": "info|emotion|sales"},
+))
+register(Tool(
+    "assets", "Generate missing image assets with the configured provider.",
+    pipeline.run_assets, {"project": "project id"},
 ))
 register(Tool(
     "voiceover", "Synthesize per-shot narration via MiMo TTS (clones source voice).",
@@ -77,4 +89,43 @@ register(Tool(
 register(Tool(
     "assemble", "Stitch collected assets (and voiceover) into the final MP4.",
     pipeline.run_assemble, {"project": "project id"},
+))
+register(Tool(
+    "pair_review", "Run two-model review over a text artifact.",
+    pipeline.run_pair_review,
+    {"project": "project id", "artifact": "analysis|research|script|storyboard|source_draft|zack_draft"},
+))
+register(Tool(
+    "pair_rewrite", "Revise a source/zack draft using a pair-review report.",
+    pipeline.run_pair_rewrite,
+    {
+        "project": "project id",
+        "artifact": "research|script|source_draft|zack_draft",
+        "report": "PairReviewReport",
+    },
+))
+register(Tool(
+    "collect", "Collect daily-radar channel snapshots.",
+    pipeline.run_collect,
+    {"workflow": "daily-radar", "date": "YYYY-MM-DD", "force": "fetch channels again"},
+))
+register(Tool(
+    "zack_ranking", "Rank daily-radar snapshots using Zack's topic-selection policy.",
+    pipeline.run_zack_ranking, {"workflow": "daily-radar", "date": "YYYY-MM-DD", "top_n": "number of candidates"},
+))
+register(Tool(
+    "source_content", "Fetch scripts/subtitles/transcripts for daily-radar candidates.",
+    pipeline.run_source_content, {"workflow": "daily-radar", "date": "YYYY-MM-DD"},
+))
+register(Tool(
+    "zack_selection", "Select one daily-radar topic before research and drafting.",
+    pipeline.run_zack_selection, {"workflow": "daily-radar", "date": "YYYY-MM-DD"},
+))
+register(Tool(
+    "source_research", "Research event details and safe framing for the selected daily-radar topic.",
+    pipeline.run_source_research, {"workflow": "daily-radar", "date": "YYYY-MM-DD"},
+))
+register(Tool(
+    "zack_draft", "Generate Zack's daily-radar topic brief and draft, using source-research when present.",
+    pipeline.run_zack_draft, {"workflow": "daily-radar", "date": "YYYY-MM-DD"},
 ))

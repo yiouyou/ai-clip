@@ -71,7 +71,7 @@ uv venv --python 3.12
 uv pip install -e ".[dev]"                      # 核心 + 测试
 uv pip install -e ".[download,extract,llm]"     # 运行时重依赖(yt-dlp、faster-whisper)
 ruff check src tests        # lint(必须通过)
-pytest -q                   # 102 个测试,须保持全绿
+pytest -q                   # 156 个测试,须保持全绿
 ```
 需要 PATH 上有 **ffmpeg + ffprobe**。开发机的 `.env` 已配:`DEEPSEEK_API_KEY`、
 `OPENAI_API_KEY`、`GEMINI_API_KEY`、`MIMO_API_KEY`、`PEXELS_API_KEY`、`TAVILY_API_KEY`。
@@ -130,6 +130,14 @@ remix)、`e2e`(80s 片)、`mpttest`、`comfyui_test`。
 - **Windows**:ffmpeg drawtext 在 filtergraph 里处理不了盘符冒号路径——见
   `captions.py`/`assemble.py`(字体复制进临时目录、ffmpeg 用 `cwd` 运行)。Git Bash 里
   `/e/...` 路径在 Python 内会失败,用 `E:/...`。
+- **Windows pid 检测**:不要用 `os.kill(pid, 0)` 判断进程是否存在。Unix 上这是探测,
+  但 Windows 上可能终止目标进程。`RadarRunLock` 这类锁应使用 WinAPI
+  `OpenProcess`/`CloseHandle` 或等价安全方法;此前 targeted pytest 自杀就是这个坑。
+- **Codex 插件稳定性**:若 Codex 崩溃并提示
+  `interface.defaultPrompt[0]: prompt must be at most 128 characters`,先检查
+  `C:/Users/Administrator/.codex/.tmp/.../.codex-plugin/plugin.json`。本机曾因
+  `ngs-analysis` 插件 defaultPrompt 过长触发 warning;临时修短后可恢复,但插件刷新可能覆盖。
+  `config.toml` 可能无 WSL 字段;若仍提示兼容性问题,去 Codex 设置里关闭“在 WSL 中运行”。
 - **中文字体**:`core/fonts.py` 自动探测系统中文字体;字幕/NarratoAI 渲染依赖它
   (没有就跳过/回退)。
 - **抖音/快手**:yt-dlp 无法列 `/user/` 主页(已验证)——discover 降级为清晰报错;

@@ -6,7 +6,25 @@ from ai_clip.core.config import Config
 
 def test_registry_has_all_stages():
     names = {t.name for t in tools.all_tools()}
-    assert names == {"download", "extract", "analyze", "storyboard", "voiceover", "assemble"}
+    assert names == {
+        "download",
+        "extract",
+        "analyze",
+        "research",
+        "storyboard",
+        "assets",
+        "voiceover",
+        "assemble",
+        "pair_review",
+        "pair_rewrite",
+        "source_draft",
+        "collect",
+        "zack_ranking",
+        "source_content",
+        "zack_selection",
+        "source_research",
+        "zack_draft",
+    }
 
 
 def test_get_unknown_raises():
@@ -17,7 +35,7 @@ def test_get_unknown_raises():
 def test_tool_metadata_complete():
     for t in tools.all_tools():
         assert t.description
-        assert "project" in t.params
+        assert t.params
 
 
 def test_invoke_dispatches(monkeypatch):
@@ -32,3 +50,5 @@ def test_invoke_dispatches(monkeypatch):
     out = tools.invoke("download", Config(), project="p", url="u")
     assert out == "clip"
     assert seen["args"] == ("p", "u")
+
+

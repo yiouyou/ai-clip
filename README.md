@@ -2,195 +2,161 @@
 
 [English](README-en.md) | **中文**
 
-一个把开源工具串成短视频流水线的**编排器**,既能**二创**(复刻爆款),也能从主题做**原创**。
+ai-clip 是一个把开源工具串成短视频流水线的**轻量编排器**，既能二创爆款，也能从主题做原创。
+它负责数据契约、CLI、设备适配、提示词、计费和流程状态；下载、转写、生成、合成等重活交给
+yt-dlp、faster-whisper、ComfyUI、ffmpeg、LLM/TTS API 等成熟工具。
 
-```
-discover → download → extract → analyze → storyboard → review →(人工/ComfyUI 出素材)→ voiceover → assemble
- 选题       yt-dlp     ffmpeg+    LLM       LLM 提示词   文案审阅                    MiMo TTS    ffmpeg
-            爆款       whisper    拆解                   (可选)                      (克隆)
+```text
+discover -> download -> extract -> analyze -> research -> storyboard -> review -> assets -> voiceover -> assemble
 ```
 
-ai-clip 本身是个轻量编排器:负责数据契约、CLI、设备适配,把重活外包给成熟项目
-(yt-dlp、faster-whisper)以及你自己掌控的图像/视频生成(本地 ComfyUI,或在浏览器里用
-你已购的即梦 / Gemini)。
+详细文档:
+
+- [工作流说明](docs/workflows.md)
+- [Research 阶段](docs/research.md)
+- [Daily Radar 选题流程](docs/radar.md)
+- [Pair Review](docs/pair-review.md)
 
 ## 设计原则
 
-- **提示词优先 + 人工介入(human-in-the-loop)**:生成类 API 默认关闭。storyboard 阶段
-  产出每镜头提示词;你在网站(或本地 ComfyUI)生成素材,丢进 `assets/`。**文件名契约**
-  (`shot_NN.png` / `shot_NN.mp4`)让 assemble 不关心素材怎么来的——ComfyUI 自动出图和
-  人工下载可以随意混用。
-- **CPU/GPU 自适应**:唯一吃 GPU 的是转写;faster-whisper 在 CPU 上用 `int8`、GPU 上自动用
-  `float16`。
-- **每项目独立产物**:一个项目的所有产物都在 `data/<project>/` 下(JSON + 文件),任意阶段
-  可单独重跑。
+- **提示词优先 + 人工介入**: `storyboard.md`、`script.md`、`research.md` 都是可编辑文件。
+- **文件名契约稳定**: 第 N 个镜头素材写入 `assets/shot_NN.png` / `shot_NN.mp4`。
+- **项目产物独立**: 每个项目都在 `data/<project>/` 下，可单独重跑阶段。
+- **轻量 metadata**: 关键产物写 `<artifact>.meta.json`，用于判断 `fresh/stale/missing`。
+- **可观测流程**: 组合 workflow 写 `data/<project>/runs/<workflow>.json`。
 
 ## 环境要求
 
 - Python 3.12+ 和 [uv](https://github.com/astral-sh/uv)
-- PATH 上有 **ffmpeg + ffprobe**(`winget install ffmpeg` / `apt install ffmpeg`)
-- 可选:一个 OpenAI 兼容的 LLM key(DeepSeek/Qwen/…);本地 ComfyUI
+- PATH 上有 **ffmpeg + ffprobe**
+- 可选: OpenAI-compatible LLM key、Tavily key、MiMo TTS key、本地 ComfyUI
 
 ## 安装
 
 ```bash
 uv venv --python 3.12
-uv pip install -e ".[dev]"            # 核心 + 测试
-uv pip install -e ".[download,extract,llm]"   # 加上运行时重依赖
-cp .env.example .env                  # 填入你的 LLM key
+uv pip install -e ".[dev]"
+uv pip install -e ".[download,extract,llm]"
+cp .env.example .env
 ```
 
 ## 快速上手
 
-把一条爆款二创成你自己主题的新视频:
+二创:
 
 ```bash
-ai-clip remix "<clip-url>" --project demo --theme "用 60 秒讲清复利"
-# -> 生成 data/demo/storyboard.md + data/demo/prompts/*.txt
-# 按文件名契约把生成的素材存进 data/demo/assets/
-ai-clip status   --project demo       # 看还缺哪些镜头的素材
-ai-clip assemble --project demo       # -> data/demo/output.mp4
+ai-clip remix "<clip-url>" -p demo --theme "用 60 秒讲清复利"
+ai-clip status -p demo
+ai-clip assemble -p demo
 ```
 
-原创(只给主题,无源视频):
+原创:
 
 ```bash
-ai-clip original --project promo --theme "城市夜骑 vlog 开场" --shots 5
+ai-clip original -p promo --theme "城市夜骑 vlog 开场" --shots 5
 ```
 
-## 视频体裁(`--format`)
+单视频原创口播:
 
-`storyboard` / `remix` / `original` 都支持 `--format` 匹配不同爆款形态:
+```bash
+ai-clip source-draft "<clip-url>" -p demo --research --theme "用复杂系统解释这个事件"
+```
 
-| 体裁 | 产出什么 | 需要的素材 |
-|------|---------|-----------|
-| `talking_head`(默认) | 逐句口播 + 可选 b-roll 配图 | 可选 b-roll 图 |
+项目级研究:
+
+```bash
+ai-clip research -p demo --theme "AI 公司的生态位竞争" --max-searches 2
+ai-clip storyboard -p demo --theme "AI 公司的生态位竞争"
+```
+
+每日选题:
+
+```bash
+ai-clip daily-radar --top 3 --research --research-searches 1
+```
+
+## 常用命令
+
+| 命令 | 用途 |
+|------|------|
+| `ai-clip transcribe <url> -p P` | 下载、转写并导出 `.srt` / `.txt` |
+| `ai-clip teardown <url> -p P` | 下载、转写并拆解爆款公式 |
+| `ai-clip source-draft <url> -p P` | 单视频生成原创口播稿 |
+| `ai-clip research -p P --theme T` | 生成 `research.json` 和可编辑 `research.md` |
+| `ai-clip storyboard -p P --theme T` | 生成分镜、素材 prompt 和 `storyboard.md` |
+| `ai-clip review -p P` / `--apply` | `storyboard.json` 和 `script.md` 往返 |
+| `ai-clip pair-review -p P --artifact script` | 多模型互审文本产物 |
+| `ai-clip status -p P` | 查看 artifact freshness 和素材缺失 |
+| `ai-clip status -p P --json` | 输出机器可读项目状态 |
+| `ai-clip assets -p P` | 生成缺失图片素材 |
+| `ai-clip voiceover -p P` | 生成配音 |
+| `ai-clip assemble -p P` | 合成最终 mp4 |
+| `ai-clip doctor` | 本地环境诊断 |
+
+## 视频体裁
+
+`storyboard`、`remix`、`original` 支持 `--format`:
+
+| 体裁 | 产出 | 素材需求 |
+|------|------|----------|
+| `talking_head` | 逐句口播 + 可选 b-roll | 可选静图 |
 | `slideshow` | 图文卡 + 屏幕字幕 + 配音 | 每张卡一张图 |
-| `remix` | 从**源视频**裁片段 + 新解说 | 无(用源视频) |
-| `montage` | 全 AI 生成的多镜头短剧 | 每镜头图(+视频) |
+| `remix` | 源视频裁片段 + 新解说 | 无，使用源视频 |
+| `montage` | 全 AI 生成多镜头短剧 | 每镜头图/视频 |
 
-`remix` 需要源视频(用 `ai-clip remix <url>`),只需 `voiceover` + `assemble` 即可出片,
-无需人工做素材。
+## 配置
 
-任意单步也可单独运行:`discover`、`download`、`extract`、`export`、`analyze`、
-`storyboard`、`review`、`status`、`voiceover`、`assemble`、`cost`。
+配置加载顺序:
 
-### 文案审阅(人工介入)
+1. `config/default.yaml`
+2. `.env`
+3. 命令行参数
 
-`storyboard` 之后、配音/合成之前是定稿文案的暂停点。直接改 `storyboard.json` 不方便,
-所以 `review` 把它往返成一个友好的 `script.md`:机器导出 → 人工编辑 → 机器解析回。
+常用环境变量:
 
-```bash
-ai-clip review -p P            # 导出 data/P/script.md(每镜头解说 + remix 的 [起-止] 时间戳)
-# 编辑 script.md:改写解说、调时间戳、删整段=删该镜头
-ai-clip review -p P --apply    # 解析回 storyboard.json(保留 asset 等其他字段)
+```text
+AICLIP_LLM_BASE_URL
+AICLIP_LLM_MODEL
+AICLIP_DATA_DIR
+DEEPSEEK_API_KEY
+OPENAI_API_KEY
+NEWAPP_URL
+NEWAPP_API_KEY
+TAVILY_API_KEY
+MIMO_API_KEY
+AICLIP_COMFYUI_URL
 ```
 
-## 组合工作流
+## 本地检查
 
-一条命令端到端串起各阶段:
+不触发付费 API 的 Windows smoke:
 
-| 命令 | 流程 | 产出 |
-|------|------|------|
-| `ai-clip transcribe <url> -p P` | download → extract → export | `.srt` + `.txt` |
-| `ai-clip teardown <url> -p P` | download → extract → analyze | 爆款公式 |
-| `ai-clip remix <url> --theme T -p P` | download → extract → analyze → remix 分镜 → 克隆配音 → assemble | **`output.mp4`(全自动)** |
-| `ai-clip original --theme T -p P [-f talking_head\|slideshow]` | 分镜 → 素材(有 ComfyUI 则自动)→ 配音 → assemble | `output.mp4`,无本地生成器时提示去填 `assets/` |
-
-`discover` 帮这些找源 URL:`ai-clip discover "AI" -p P --top 5`。YouTube/B站 支持关键词
-搜索;抖音/快手无搜索 API,请用 `--platform douyin --channel <用户主页URL>` 对某作者的
-近期作品排序(或直接把视频链接交给 `ai-clip download`)。
-
-### 意图(info / emotion / sales)
-
-`--intent` 同时影响 analyze 和 storyboard:
-
-- `info`(默认)—— 知识优先,中立讲解。
-- `emotion` —— **带立场的观点表达**:从新闻/事件里提炼**立场 + 情绪**并表达出来(而非中立
-  报道)。可用 `--stance "..."` 指定立场,不指定则由 LLM 自己挑。
-- `sales` —— 带货(痛点 → 煽动 → 产品 → 证言 → CTA)。用 `--product products/mine.yaml`
-  传入可复用的产品档案(见 `products/*.example.yaml`)。
-
-```bash
-ai-clip remix <url> --theme "锐评本周AI" --intent emotion -p p1
-ai-clip original --theme "麻友手气" --intent sales --product products/mahjong.yaml -p p2
+```powershell
+.\scripts\smoke.ps1
 ```
 
-### 字幕烧录
-
-加 `--captions`(或在 config 里 `burn_captions: true`),用 ffmpeg `drawtext` 把每镜头的
-字幕(slideshow)或旁白(口播/remix)烧进画面。会自动探测可用的中文字体,找不到则跳过烧录。
+提交前建议:
 
 ```bash
-ai-clip remix <url> --theme T --captions -p p1
-ai-clip assemble -p p1 --captions
+uv run ruff check src tests
+uv run --extra download pytest -q
 ```
 
-## 配音(MiMo TTS + 声音克隆)
+## 可选后端
 
-`ai-clip voiceover` 用小米 [MiMo-V2.5-TTS](https://mimo.mi.com) 合成每镜头旁白。当
-`tts.clone_from_source: true`(默认)且用 `mimo-v2.5-tts-voiceclone` 模型时,它会从
-**extract 阶段提取的人声**里截一小段参考音频克隆原说话人音色——这样二创能保留原作者的
-声线。没有源视频时回退到预设音色(`tts.voice`)。在 `.env` 里设 `MIMO_API_KEY`。
+- **ComfyUI**: 本地自动出图，配置 `assets.image_provider: comfyui` 或 `auto`。
+- **Smart Illustrator**: 信息图/封面风格图片 provider，见配置里的 `assets.smart_illustrator_*`。
+- **MoneyPrinterTurbo / NarratoAI**: 作为外部 produce 后端用于对比效果。
 
-```bash
-ai-clip voiceover --project demo     # -> data/demo/voice/shot_NN.wav
-ai-clip assemble  --project demo     # 自动带上 voice/
-```
+## 成本
 
-## ComfyUI(可选,本地自动出图)
-
-1. 启动 ComfyUI(默认 `http://127.0.0.1:8188`)。
-2. 导出 **API 格式**的工作流,把正向提示词节点的 `text` 设为字面量 `AICLIP_PROMPT`,
-   存为 `workflows/txt2img.json`(参考 `workflows/txt2img.example.json`)。
-3. 设 `assets.image_provider: auto`(默认)。ComfyUI 可达且工作流存在时自动出图;否则回退到
-   prompt-only(你去浏览器生成)。
-
-**没有 GPU 也能跑。** CPU 上最快的模型是 **SD-Turbo**(SD1.5,1 步):用 `--cpu` 启动
-ComfyUI,把 `sd_turbo.safetensors` 放进 `models/checkpoints/`,用自带的
-`workflows/txt2img.json`(512×768,1 步)。实测 CPU 单张约 25s。文生**视频**在 CPU 上不
-实用——视频继续走 `video_provider: prompt_only`(浏览器即梦/可灵)或用 GPU。
-talking_head/slideshow 只需静图,CPU ComfyUI 完全够;remix 根本不需要生成。
-
-## Docker
-
-```bash
-cp .env.example .env
-docker compose --profile cpu up        # CPU 机
-docker compose --profile gpu up        # GPU 机(whisper 走 CUDA + ComfyUI 服务)
-```
-
-`profiles` 控制装/起哪些;编排器和每个重型工具各自独立容器,通过共享的 `./data` 卷通信。
-
-## 花销计费
-
-每次 LLM 调用(analyze + 分镜)和 TTS 合成都会按调用追加到 `data/<项目>/cost.jsonl`,
-跨命令累计。`ai-clip cost -p 项目` 汇总总花销 + 按阶段/模型拆分。
+LLM/TTS 调用会追加到 `data/<project>/cost.jsonl`:
 
 ```bash
 ai-clip cost -p demo
-# total $0.0021 over 1 call(s) | in 5,059 / out 1,667 tok | ...
 ```
-
-价格表在 [src/ai_clip/core/billing.py](src/ai_clip/core/billing.py)(`LLM_PRICES` /
-`TTS_PRICES`,USD)——**请按你的实际套餐改**;未知模型按 0 计。本地步骤(whisper、
-ffmpeg、ComfyUI)免费不计。
-
-## 外部 produce 后端(可选)
-
-自建 storyboard→voiceover→assemble 路线之外的替代方案,用于对比效果。
-(`mpt` 只是 MoneyPrinterTurbo 的简称。)
-
-- **MoneyPrinterTurbo**(主题 → 库存素材 + TTS + 字幕成片)。它有 REST API,所以
-  `ai-clip mpt --theme T -p P` 能干净驱动。用 Docker 起 MoneyPrinterTurbo(配 LLM +
-  Pexels/Pixabay key),设 `AICLIP_MPT_URL`(默认 `http://127.0.0.1:8080`)。已端到端验证。
-- **NarratoAI**(解说二创)。它只有 WebUI(无 HTTP API),所以 `NarratoBackend` 通过子进程
-  在 NarratoAI 自己的 repo/venv 里硬接其内部函数 `start_subclip_unified`;ai-clip 的 remix
-  分镜会映射成它的剪辑脚本。
-
-这些都是可选的;默认流水线一个都不需要。
 
 ## 许可与依赖
 
-ai-clip 编排了第三方项目(yt-dlp、faster-whisper、ComfyUI 等);再分发或商用前请查看各项目
-各自的许可证。
+ai-clip 编排第三方项目，包括 yt-dlp、faster-whisper、ComfyUI、ffmpeg 等。再分发或商用前，
+请分别查看这些项目的许可证。

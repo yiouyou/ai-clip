@@ -2,210 +2,162 @@
 
 **English** | [中文](README.md)
 
-An **orchestrator** that chains open-source tools into a short-video pipeline — for
-both **remixing** a viral clip (二创) and producing **original** videos from a theme.
+ai-clip is a lightweight short-video pipeline orchestrator. It can remix viral clips
+or produce original videos from a topic. The project owns contracts, CLI commands,
+device adaptation, prompts, cost logging, and workflow status; heavy work is delegated
+to yt-dlp, faster-whisper, ComfyUI, ffmpeg, LLM APIs, and TTS APIs.
 
+```text
+discover -> download -> extract -> analyze -> research -> storyboard -> review -> assets -> voiceover -> assemble
 ```
-discover → download → extract → analyze → storyboard → review → (human/ComfyUI assets) → voiceover → assemble
- find      yt-dlp     ffmpeg+    LLM       LLM prompts   script                          MiMo TTS    ffmpeg
- hits      whisper    teardown                review(opt)                                 (clone)
-```
 
-ai-clip itself is a lightweight orchestrator: it owns the data contract, the CLI,
-device adaptation, and delegates heavy work to mature projects (yt-dlp,
-faster-whisper) and to image/video generation you control (local ComfyUI, or
-即梦/Gemini in the browser with a plan you already pay for).
+Detailed docs:
 
-## Design principles
+- [Workflows](docs/workflows.md)
+- [Research](docs/research.md)
+- [Daily Radar](docs/radar.md)
+- [Pair Review](docs/pair-review.md)
 
-- **Prompt-first, human-in-the-loop.** Generation APIs are off by default. The
-  storyboard step writes per-shot prompts; you create assets on a website (or via
-  local ComfyUI) and drop them into `assets/`. The **filename contract**
-  (`shot_NN.png` / `shot_NN.mp4`) means assemble doesn't care how an asset was made
-  — ComfyUI auto-gen and human downloads mix freely.
-- **CPU/GPU adaptive.** Only transcription cares about the GPU; faster-whisper uses
-  `int8` on CPU and `float16` on GPU automatically.
-- **Per-project artifacts.** Everything for a project lives under `data/<project>/`
-  (JSON + files), so any stage can be re-run in isolation.
+## Principles
+
+- **Prompt-first, human-in-the-loop**: `storyboard.md`, `script.md`, and `research.md` are editable.
+- **Stable filename contract**: shot N uses `assets/shot_NN.png` / `shot_NN.mp4`.
+- **Per-project artifacts**: everything lives under `data/<project>/`.
+- **Lightweight metadata**: key artifacts write `<artifact>.meta.json` for freshness checks.
+- **Observable workflows**: composed workflows write `data/<project>/runs/<workflow>.json`.
 
 ## Requirements
 
 - Python 3.12+ and [uv](https://github.com/astral-sh/uv)
-- **ffmpeg + ffprobe** on PATH (`winget install ffmpeg` / `apt install ffmpeg`)
-- Optional: an OpenAI-compatible LLM key (DeepSeek/Qwen/…); a local ComfyUI
+- **ffmpeg + ffprobe** on PATH
+- Optional: OpenAI-compatible LLM key, Tavily key, MiMo TTS key, local ComfyUI
 
 ## Install
 
 ```bash
 uv venv --python 3.12
-uv pip install -e ".[dev]"            # core + tests
-uv pip install -e ".[download,extract,llm]"   # heavy runtime extras
-cp .env.example .env                  # fill in your LLM key
-```
-
-## Quick start
-
-Remix a viral clip into a new video on your own theme:
-
-```bash
-ai-clip remix "<clip-url>" --project demo --theme "explain compounding in 60s"
-# -> writes data/demo/storyboard.md + data/demo/prompts/*.txt
-# put generated assets into data/demo/assets/ per the filename contract
-ai-clip status   --project demo       # which shots still lack assets
-ai-clip assemble --project demo       # -> data/demo/output.mp4
-```
-
-Original (theme only, no source clip):
-
-```bash
-ai-clip original --project promo --theme "city night-ride vlog opener" --shots 5
-```
-
-## Video formats (`--format`)
-
-`storyboard` / `remix` / `original` accept `--format` to match the viral archetype:
-
-| Format | What it produces | Assets needed |
-|--------|------------------|---------------|
-| `talking_head` (default) | Narration lines + optional b-roll stills | Optional b-roll images |
-| `slideshow` | Image cards + on-screen captions + narration | One image per card |
-| `remix` | Spans cut from the **source clip** + new narration | None (uses source) |
-| `montage` | Fully AI-generated multi-shot drama | Image (+video) per shot |
-
-`remix` needs a source clip (`ai-clip remix <url>`); it produces a playable video
-with just `voiceover` + `assemble` — no manual asset creation.
-
-Run any stage on its own: `discover`, `download`, `extract`, `export`, `analyze`,
-`storyboard`, `review`, `status`, `voiceover`, `assemble`, `cost`.
-
-### Script review (human-in-the-loop)
-
-After `storyboard` and before voiceover/assemble is the point to finalize the
-script. Editing `storyboard.json` by hand is awkward, so `review` round-trips it
-through a friendly `script.md`: machine exports → human edits → machine parses back.
-
-```bash
-ai-clip review -p P            # export data/P/script.md (narration + remix [start-end] timestamps)
-# edit script.md: rewrite narration, tweak timestamps, delete a block to drop a shot
-ai-clip review -p P --apply    # parse back into storyboard.json (keeps asset fields)
-```
-
-## Composed workflows
-
-One command chains the stages end to end:
-
-| Command | Flow | Output |
-|---------|------|--------|
-| `ai-clip transcribe <url> -p P` | download → extract → export | `.srt` + `.txt` |
-| `ai-clip teardown <url> -p P` | download → extract → analyze | viral formula |
-| `ai-clip remix <url> --theme T -p P` | download → extract → analyze → remix storyboard → cloned voiceover → assemble | **`output.mp4` (fully auto)** |
-| `ai-clip original --theme T -p P [-f talking_head\|slideshow]` | storyboard → assets (ComfyUI if available) → voiceover → assemble | `output.mp4`, or a prompt to fill `assets/` if no local generator |
-
-`discover` finds source URLs to feed these: `ai-clip discover "AI" -p P --top 5`.
-YouTube/Bilibili support keyword search; douyin/kuaishou have no search API, so pass
-`--platform douyin --channel <user page URL>` to rank a creator's recent clips (or
-just hand a direct video URL to `ai-clip download`).
-
-### Intent (info / emotion / sales)
-
-`--intent` steers both analyze and storyboard:
-
-- `info` (default) — knowledge-first, neutral explainer.
-- `emotion` — an opinionated take: extract a **stance + emotional charge** from the
-  news/event and express it (not neutral reporting). `--stance "..."` to fix the
-  angle; otherwise the LLM picks one.
-- `sales` — product promo (pain → agitate → product → proof → CTA). Pass a reusable
-  product profile with `--product products/mine.yaml` (see `products/*.example.yaml`).
-
-```bash
-ai-clip remix <url> --theme "hot take on this week's AI" --intent emotion -p p1
-ai-clip original --theme "mahjong luck" --intent sales --product products/mahjong.yaml -p p2
-```
-
-### Burned-in captions
-
-Add `--captions` (or `burn_captions: true` in config) to burn each shot's caption
-(slideshow) or narration (talking-head/remix) into the video via ffmpeg `drawtext`.
-A CJK-capable system font is auto-detected; burning is skipped if none is found.
-
-```bash
-ai-clip remix <url> --theme T --captions -p p1
-ai-clip assemble -p p1 --captions
-```
-
-## Voiceover (MiMo TTS + voice cloning)
-
-`ai-clip voiceover` synthesizes each shot's narration with Xiaomi
-[MiMo-V2.5-TTS](https://mimo.mi.com). With `tts.clone_from_source: true` (default)
-and the `mimo-v2.5-tts-voiceclone` model, it cuts a short reference snippet from the
-**voice extracted in the `extract` stage** and clones the original speaker — so a
-remix keeps the source creator's timbre. Without a source clip it falls back to a
-preset voice (`tts.voice`). Set `MIMO_API_KEY` in `.env`.
-
-```bash
-ai-clip voiceover --project demo     # -> data/demo/voice/shot_NN.wav
-ai-clip assemble  --project demo     # picks up voice/ automatically
-```
-
-## ComfyUI (optional, local auto image generation)
-
-1. Run ComfyUI (default `http://127.0.0.1:8188`).
-2. Export an **API-format** workflow, set the positive-prompt node's `text` to the
-   literal `AICLIP_PROMPT`, save it as `workflows/txt2img.json` (see
-   `workflows/txt2img.example.json`).
-3. Set `assets.image_provider: auto` (default). When ComfyUI answers and the
-   workflow exists, images are generated automatically; otherwise it falls back to
-   prompt-only (you generate in the browser).
-
-**No GPU? Still works.** The fastest CPU model is **SD-Turbo** (SD1.5, 1 step):
-launch ComfyUI with `--cpu`, drop `sd_turbo.safetensors` into `models/checkpoints/`,
-and use the bundled `workflows/txt2img.json` (512×768, 1 step). ~25s/image on CPU.
-Text-to-**video** is not practical on CPU — keep `video_provider: prompt_only`
-(即梦/可灵 in the browser) or use a GPU. talking_head/slideshow only need stills, so
-CPU ComfyUI fully covers them; remix needs no generation at all.
-
-## Docker
-
-```bash
+uv pip install -e ".[dev]"
+uv pip install -e ".[download,extract,llm]"
 cp .env.example .env
-docker compose --profile cpu up        # CPU box
-docker compose --profile gpu up        # GPU box (whisper on CUDA + ComfyUI service)
 ```
 
-`profiles` control what gets installed/started; the orchestrator and each heavy tool
-get their own container and talk over a shared `./data` volume.
+## Quick Start
 
-## Cost accounting
+Remix:
 
-Every LLM call (analyze + storyboard) and TTS synthesis is appended to
-`data/<project>/cost.jsonl`, accumulated across commands. `ai-clip cost -p P` sums
-the total + a per-stage / per-model breakdown.
+```bash
+ai-clip remix "<clip-url>" -p demo --theme "explain compounding in 60s"
+ai-clip status -p demo
+ai-clip assemble -p demo
+```
+
+Original:
+
+```bash
+ai-clip original -p promo --theme "city night-ride vlog opener" --shots 5
+```
+
+Single-source original draft:
+
+```bash
+ai-clip source-draft "<clip-url>" -p demo --research --theme "explain this through complex systems"
+```
+
+Project research:
+
+```bash
+ai-clip research -p demo --theme "AI companies as ecological niches" --max-searches 2
+ai-clip storyboard -p demo --theme "AI companies as ecological niches"
+```
+
+Daily topic radar:
+
+```bash
+ai-clip daily-radar --top 3 --research --research-searches 1
+```
+
+## Common Commands
+
+| Command | Purpose |
+|---------|---------|
+| `ai-clip transcribe <url> -p P` | Download, transcribe, and export `.srt` / `.txt` |
+| `ai-clip teardown <url> -p P` | Download, transcribe, and analyze viral formula |
+| `ai-clip source-draft <url> -p P` | Generate an original talking-head draft from one source |
+| `ai-clip research -p P --theme T` | Write `research.json` and editable `research.md` |
+| `ai-clip storyboard -p P --theme T` | Generate storyboard, prompts, and `storyboard.md` |
+| `ai-clip review -p P` / `--apply` | Round-trip `storyboard.json` through `script.md` |
+| `ai-clip pair-review -p P --artifact script` | Multi-model review of text artifacts |
+| `ai-clip status -p P` | Show artifact freshness and missing assets |
+| `ai-clip status -p P --json` | Emit machine-readable project status |
+| `ai-clip assets -p P` | Generate missing image assets |
+| `ai-clip voiceover -p P` | Generate voiceover |
+| `ai-clip assemble -p P` | Assemble final mp4 |
+| `ai-clip doctor` | Diagnose local environment |
+
+## Video Formats
+
+`storyboard`, `remix`, and `original` support `--format`:
+
+| Format | Output | Assets |
+|--------|--------|--------|
+| `talking_head` | narration lines + optional b-roll | optional stills |
+| `slideshow` | image cards + captions + narration | one image per card |
+| `remix` | source spans + fresh narration | none; uses source video |
+| `montage` | fully generated multi-shot drama | image/video per shot |
+
+## Configuration
+
+Config loading order:
+
+1. `config/default.yaml`
+2. `.env`
+3. CLI arguments
+
+Common environment variables:
+
+```text
+AICLIP_LLM_BASE_URL
+AICLIP_LLM_MODEL
+AICLIP_DATA_DIR
+DEEPSEEK_API_KEY
+OPENAI_API_KEY
+NEWAPP_URL
+NEWAPP_API_KEY
+TAVILY_API_KEY
+MIMO_API_KEY
+AICLIP_COMFYUI_URL
+```
+
+## Local Checks
+
+Windows smoke test with no paid API calls:
+
+```powershell
+.\scripts\smoke.ps1
+```
+
+Before submitting changes:
+
+```bash
+uv run ruff check src tests
+uv run --extra download pytest -q
+```
+
+## Optional Backends
+
+- **ComfyUI**: local image generation via `assets.image_provider: comfyui` or `auto`.
+- **Smart Illustrator**: infographic/thumbnail image provider through `assets.smart_illustrator_*`.
+- **MoneyPrinterTurbo / NarratoAI**: external produce backends for comparison.
+
+## Cost Accounting
+
+LLM/TTS calls append to `data/<project>/cost.jsonl`:
 
 ```bash
 ai-clip cost -p demo
-# total $0.0021 over 1 call(s) | in 5,059 / out 1,667 tok | ...
 ```
 
-Price tables are in [src/ai_clip/core/billing.py](src/ai_clip/core/billing.py)
-(`LLM_PRICES` / `TTS_PRICES`, USD) — **edit them to match your plan**; unknown models
-count as 0. Local steps (whisper, ffmpeg, ComfyUI) are free and not metered.
+## License & Dependencies
 
-## External produce backends (optional)
-
-Alternatives to the self-built storyboard→voiceover→assemble path, for comparison.
-(`mpt` is just shorthand for MoneyPrinterTurbo.)
-
-- **MoneyPrinterTurbo** (theme → stock footage + TTS + subtitle video). It has a REST
-  API, so `ai-clip mpt --theme T -p P` drives it cleanly. Run MoneyPrinterTurbo
-  (Docker) with an LLM + Pexels/Pixabay key, set `AICLIP_MPT_URL` (default
-  `http://127.0.0.1:8080`). Verified end-to-end.
-- **NarratoAI** (解说二创). WebUI-only (no HTTP API), so `NarratoBackend` hard-wires
-  its internal `start_subclip_unified` via a subprocess inside NarratoAI's own
-  repo/venv; an ai-clip remix storyboard maps to its clip script.
-
-These are opt-in; the default pipeline needs none of them.
-
-## License & dependencies
-
-ai-clip orchestrates third-party projects (yt-dlp, faster-whisper, ComfyUI, etc.);
-review each project's license before redistribution or commercial use.
+ai-clip orchestrates third-party projects such as yt-dlp, faster-whisper, ComfyUI,
+and ffmpeg. Review each upstream license before redistribution or commercial use.
