@@ -1,0 +1,25 @@
+# Optional daily-radar ranking feedback.
+# Copy to config/radar-feedback.yaml and edit over time.
+
+upweight_keywords:
+  - 生物
+  - 进化
+  - 生态
+  - 系统
+
+downrank_keywords:
+  - 台风
+  - 气象
+  - 天气
+
+avoid_video_ids: []
+
+preferred_pools:
+  - society
+  - ai
+  - knowledge
+
+downrank_pools: []
+
+upweight_multiplier: 1.15
+downrank_multiplier: 0.7

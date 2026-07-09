@@ -1,0 +1,22 @@
+channels:
+  - platform: youtube
+    url: https://www.youtube.com/@example
+    name: Example YouTube Channel
+    pool: ai
+    role: signal
+    tags: [ai, business]
+    priority: 1
+    lens_fit: 1.3
+    max_duration_sec: 1800
+    cookies: ""
+
+  - platform: bilibili
+    url: https://space.bilibili.com/123456
+    name: Example Bilibili UP
+    pool: society
+    role: signal
+    tags: [tech, china]
+    priority: 1
+    lens_fit: 1.4
+    max_duration_sec: 1800
+    cookies: path/to/bilibili.cookies.txt

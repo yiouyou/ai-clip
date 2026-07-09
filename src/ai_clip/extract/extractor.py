@@ -38,7 +38,7 @@ def extract(
             )
         # No usable subtitles -> fall back to whisper.
 
-    segments, language, text = _transcribe(audio_path, whisper)
+    segments, language, text = transcribe_audio(audio_path, whisper)
     return Transcript(
         clip_id=clip.clip_id,
         language=language,
@@ -48,7 +48,7 @@ def extract(
     )
 
 
-def _transcribe(
+def transcribe_audio(
     audio_path: Path, whisper: WhisperConfig
 ) -> tuple[list[TranscriptSegment], str, str]:
     try:
