@@ -6,6 +6,13 @@ __pycache__/
 /.testdata/
 /services/comfyui/models/
 /workflows/txt2img.json
+/config/channels.yaml
+/config/radar-fast.yaml
+/config/radar-feedback.yaml
+/products/*
+!/products/*.example.yaml
+/baseline.md
 .pytest_cache/
 .ruff_cache/
 *.egg-info/
+*cookies.txt

@@ -14,9 +14,14 @@ llm:
   model: deepseek-v4-pro                    # OpenAI: https://api.openai.com/v1 + gpt-5.5
 
 assets:
-  image_provider: auto        # auto|comfyui|prompt_only
+  image_provider: auto        # auto|comfyui|smart_illustrator|prompt_only
   video_provider: prompt_only  # prompt_only|comfyui
   comfyui_url: http://127.0.0.1:8188
+  smart_illustrator_dir: ""       # optional path to smart-illustrator checkout/skill
+  smart_illustrator_script: ""    # optional direct path to scripts/generate-image.ts
+  smart_illustrator_provider: ""  # openrouter|gemini, empty = script auto-detects
+  smart_illustrator_model: ""
+  smart_illustrator_candidates: 1
 
 tts:
   base_url: https://api.xiaomimimo.com/v1
@@ -24,3 +29,36 @@ tts:
   voice: Chloe                       # preset voice (used when not cloning)
   clone_from_source: true            # clone the source clip's speaker
   reference_seconds: 10.0            # reference snippet length for cloning
+
+pair:
+  base_url: ""     # set from NEWAPP_URL
+  api_key: ""      # set from NEWAPP_API_KEY
+  models:
+    - openai/gpt-5.5
+    - anthropic/claude-sonnet-4-8
+    - anthropic/claude-sonnet-4-6
+  deepseek_base_url: https://api.deepseek.com/v1
+  deepseek_api_key: ""  # set from DEEPSEEK_API_KEY
+  deepseek_models:
+    - deepseek-4-pro
+  timeout: 120.0
+
+source_research:
+  tavily_api_key: ""  # set from TAVILY_API_KEY
+  max_searches: 2     # code clamps to 1-3 per run
+  max_results: 5
+  search_depth: basic
+  timeout: 30.0
+
+radar:
+  channels_path: config/channels.yaml
+  feedback_path: config/radar-feedback.yaml
+  top_n: 3
+  channel_limit: 20
+  channel_timeout_sec: 60  # daily collect/run skip a stuck channel after this; 0 disables
+  channel_workers: 4       # parallel channel collectors when timeout is enabled
+  since_days: 2
+  max_duration_sec: 900.0
+  timezone: Asia/Shanghai
+  transcribe_missing: true  # if no subtitles, download bestaudio and use faster-whisper
+  transcribe_model_size: small  # radar speed default; main extract still uses whisper.model_size

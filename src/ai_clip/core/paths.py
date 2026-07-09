@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from pydantic import BaseModel
+
+from ai_clip.core.artifacts import (
+    ArtifactStore,
+    read_model as _read_model,
+    write_model as _write_model,
+)
 
 
 class ProjectPaths:
@@ -14,6 +19,10 @@ class ProjectPaths:
     def __init__(self, data_dir: str | Path, project: str) -> None:
         self.root = Path(data_dir) / project
         self.project = project
+
+    @property
+    def store(self) -> ArtifactStore:
+        return ArtifactStore(self.root)
 
     @property
     def candidates_json(self) -> Path:
@@ -40,6 +49,14 @@ class ProjectPaths:
         return self.root / "analysis.json"
 
     @property
+    def research_json(self) -> Path:
+        return self.root / "research.json"
+
+    @property
+    def research_md(self) -> Path:
+        return self.root / "research.md"
+
+    @property
     def storyboard_json(self) -> Path:
         return self.root / "storyboard.json"
 
@@ -52,12 +69,32 @@ class ProjectPaths:
         return self.root / "script.md"
 
     @property
+    def source_draft_md(self) -> Path:
+        return self.root / "source_draft.md"
+
+    @property
+    def source_draft_revised_md(self) -> Path:
+        return self.root / "source_draft.revised.md"
+
+    @property
     def prompts_dir(self) -> Path:
         return self.root / "prompts"
 
     @property
     def assets_dir(self) -> Path:
         return self.root / "assets"
+
+    @property
+    def reviews_dir(self) -> Path:
+        return self.root / "reviews"
+
+    @property
+    def runs_dir(self) -> Path:
+        return self.root / "runs"
+
+    def run_status_json(self, workflow: str) -> Path:
+        safe = workflow.replace("/", "-").replace("\\", "-")
+        return self.runs_dir / f"{safe}.json"
 
     @property
     def voice_dir(self) -> Path:
@@ -72,15 +109,20 @@ class ProjectPaths:
         return self.root / "output.mp4"
 
     def ensure(self) -> None:
-        for d in (self.root, self.prompts_dir, self.assets_dir, self.voice_dir):
+        for d in (
+            self.root,
+            self.prompts_dir,
+            self.assets_dir,
+            self.voice_dir,
+            self.reviews_dir,
+            self.runs_dir,
+        ):
             d.mkdir(parents=True, exist_ok=True)
 
 
 def write_model(path: Path, model: BaseModel) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(model.model_dump_json(indent=2), encoding="utf-8")
+    _write_model(path, model)
 
 
 def read_model[T: BaseModel](path: Path, model_cls: type[T]) -> T:
-    data = json.loads(path.read_text(encoding="utf-8"))
-    return model_cls.model_validate(data)
+    return _read_model(path, model_cls)

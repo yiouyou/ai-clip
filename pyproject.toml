@@ -12,6 +12,7 @@ dependencies = [
     "typer>=0.15,<0.18",
     "rich>=13.9",
     "httpx>=0.28,<0.29",
+    "tzdata>=2025.2",
 ]
 
 [project.optional-dependencies]
