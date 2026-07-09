@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ai_clip.core.config import LLMConfig
-from ai_clip.core.models import Intent, ProductProfile, Transcript, ViralAnalysis
+from ai_clip.core.models import AssetEngine, Intent, ProductProfile, Transcript, ViralAnalysis
 
 
 @dataclass
@@ -22,6 +22,7 @@ class GenerateArgs:
     intent: Intent = Intent.info
     stance: str = ""  # optional override for the emotion intent
     product: ProductProfile | None = None  # required by the sales intent
+    research_markdown: str = ""
     duration_sec: float = 30.0
     aspect_ratio: str = "9:16"
     n_shots: int = 6
@@ -30,3 +31,12 @@ class GenerateArgs:
 def asset_names(index: int) -> tuple[str, str]:
     stem = f"shot_{index:02d}"
     return f"{stem}.png", f"{stem}.mp4"
+
+
+def parse_asset_engine(raw: object) -> AssetEngine | None:
+    if not raw:
+        return None
+    try:
+        return AssetEngine(str(raw))
+    except ValueError:
+        return None

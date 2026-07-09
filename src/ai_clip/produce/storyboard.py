@@ -33,6 +33,7 @@ def generate_storyboard(
     intent: Intent = Intent.info,
     stance: str = "",
     product: ProductProfile | None = None,
+    research_markdown: str = "",
     duration_sec: float = 30.0,
     aspect_ratio: str = "9:16",
     n_shots: int = 6,
@@ -40,6 +41,7 @@ def generate_storyboard(
     args = GenerateArgs(
         project=project, theme=theme, cfg=cfg, analysis=analysis,
         transcript=transcript, intent=intent, stance=stance, product=product,
+        research_markdown=research_markdown,
         duration_sec=duration_sec, aspect_ratio=aspect_ratio, n_shots=n_shots,
     )
     return get_generator(fmt)(args)
@@ -89,6 +91,8 @@ def _render_markdown(sb: Storyboard) -> str:
             lines += [f"**Voiceover:** {shot.voiceover}", ""]
         if shot.caption:
             lines += [f"**Caption:** {shot.caption}", ""]
+        if shot.asset_engine:
+            lines += [f"**Asset engine:** {shot.asset_engine}", ""]
         if shot.is_source_segment:
             lines += [f"**Source span:** {shot.source_start:g}s – {shot.source_end:g}s", ""]
         if shot.image_prompt:

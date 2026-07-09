@@ -5,12 +5,14 @@ from __future__ import annotations
 
 from ai_clip.core import llm as llm_mod
 from ai_clip.core.models import Shot, Storyboard, VideoFormat
-from ai_clip.produce.formats.base import GenerateArgs, asset_names
+from ai_clip.produce.formats.base import GenerateArgs, asset_names, parse_asset_engine
 from ai_clip.produce.formats.prompts import (
     SLIDESHOW_SYSTEM,
     SLIDESHOW_USER,
+    asset_engine_block,
     formula_block,
     intent_block,
+    research_block,
 )
 
 
@@ -22,6 +24,8 @@ def generate(args: GenerateArgs) -> Storyboard:
             theme=args.theme, duration=args.duration_sec,
             aspect=args.aspect_ratio, n_shots=args.n_shots,
             intent=intent_block(args), formula=formula_block(args.analysis),
+            research=research_block(args.research_markdown),
+            asset_engine=asset_engine_block(),
         ),
     )
     data = llm_mod.extract_json(reply)
@@ -33,6 +37,7 @@ def generate(args: GenerateArgs) -> Storyboard:
             duration_sec=float(raw.get("duration_sec", 3.0)),
             shot_type="card",
             image_prompt=str(raw.get("image_prompt", "")),
+            asset_engine=parse_asset_engine(raw.get("asset_engine")),
             caption=str(raw.get("caption", "")),
             voiceover=str(raw.get("voiceover", "")),
             image_file=png,

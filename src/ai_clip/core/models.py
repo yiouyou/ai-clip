@@ -115,6 +115,15 @@ class VideoFormat(StrEnum):
     montage = "montage"  # fully AI-generated multi-shot drama
 
 
+class AssetEngine(StrEnum):
+    manual = "manual"
+    comfyui = "comfyui"
+    smart_illustrator = "smart_illustrator"
+    gemini = "gemini"
+    mermaid = "mermaid"
+    excalidraw = "excalidraw"
+
+
 class Shot(BaseModel):
     """One storyboard shot. The filename fields are the contract that lets the
     assemble stage pick up assets regardless of how they were produced
@@ -126,6 +135,7 @@ class Shot(BaseModel):
     shot_type: str = ""
     image_prompt: str = ""
     video_prompt: str = ""
+    asset_engine: AssetEngine | None = None
     voiceover: str = ""
     caption: str = ""  # on-screen text (slideshow)
     image_file: str = ""

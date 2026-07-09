@@ -12,6 +12,7 @@ from ai_clip.produce.formats.prompts import (
     REMIX_USER,
     formula_block,
     intent_block,
+    research_block,
 )
 
 
@@ -34,6 +35,7 @@ def generate(args: GenerateArgs) -> Storyboard:
             theme=args.theme, duration=args.duration_sec, n_shots=args.n_shots,
             source_min=max_end / 60.0, ratio=ratio,
             intent=intent_block(args), formula=formula_block(args.analysis),
+            research=research_block(args.research_markdown),
             segments=_segments_text(args.transcript),
         ),
     )

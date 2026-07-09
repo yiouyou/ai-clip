@@ -1,4 +1,5 @@
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -6,11 +7,12 @@ import pytest
 from ai_clip.analyze import analyzer
 from ai_clip.core import llm as llm_mod
 from ai_clip.core.config import AssetsConfig, LLMConfig
-from ai_clip.core.models import Transcript, TranscriptSegment, VideoFormat
+from ai_clip.core.models import AssetEngine, Shot, Transcript, TranscriptSegment, VideoFormat
 from ai_clip.produce import storyboard as sb_mod
 from ai_clip.produce.assets.comfyui import ComfyUIError, ComfyUIProvider
 from ai_clip.produce.assets.factory import resolve_image_provider
 from ai_clip.produce.assets.prompt_only import PromptOnlyProvider
+from ai_clip.produce.assets.smart_illustrator import SmartIllustratorProvider
 
 _ANALYSIS_REPLY = json.dumps(
     {
@@ -25,7 +27,12 @@ _ANALYSIS_REPLY = json.dumps(
 
 _TALKING_HEAD_REPLY = json.dumps({
     "lines": [
-        {"voiceover": "你知道吗", "duration_sec": 4, "broll_prompt": "城市夜景"},
+        {
+            "voiceover": "你知道吗",
+            "duration_sec": 4,
+            "broll_prompt": "城市夜景",
+            "asset_engine": "smart_illustrator",
+        },
         {"voiceover": "答案很简单", "duration_sec": 3, "broll_prompt": ""},
     ]
 })
@@ -61,16 +68,28 @@ def test_analyze_empty_transcript():
 
 
 def test_talking_head_format(monkeypatch, tmp_path: Path):
-    monkeypatch.setattr(llm_mod, "chat", lambda *a, **k: _TALKING_HEAD_REPLY)
+    seen = {}
+
+    def fake_chat(cfg, system, user):
+        seen["user"] = user
+        return _TALKING_HEAD_REPLY
+
+    monkeypatch.setattr(llm_mod, "chat", fake_chat)
     sb = sb_mod.generate_storyboard(
-        "demo", "理财", LLMConfig(api_key="x"), fmt=VideoFormat.talking_head
+        "demo",
+        "理财",
+        LLMConfig(api_key="x"),
+        fmt=VideoFormat.talking_head,
+        research_markdown="confirmed detail",
     )
     assert sb.format == VideoFormat.talking_head
     assert len(sb.shots) == 2
     assert sb.shots[0].voiceover == "你知道吗"
     assert sb.shots[0].image_file == "shot_01.png"  # has b-roll
+    assert sb.shots[0].asset_engine == AssetEngine.smart_illustrator
     assert sb.shots[1].image_file == ""  # no b-roll -> no asset expected
     assert sb.shots[1].expected_files() == []
+    assert "confirmed detail" in seen["user"]
 
     prompts = tmp_path / "prompts"
     sb_mod.write_storyboard_files(sb, prompts, tmp_path / "storyboard.md")
@@ -133,6 +152,44 @@ def test_factory_comfyui_explicit_unavailable_raises(monkeypatch):
     monkeypatch.setattr(ComfyUIProvider, "is_available", staticmethod(lambda *a, **k: False))
     with pytest.raises(RuntimeError):
         resolve_image_provider(AssetsConfig(image_provider="comfyui"))
+
+
+def test_factory_asset_engine_selects_smart_illustrator(monkeypatch, tmp_path):
+    script = tmp_path / "generate-image.ts"
+    script.write_text("// ok", encoding="utf-8")
+    monkeypatch.setattr(SmartIllustratorProvider, "is_available", staticmethod(lambda *a, **k: True))
+    cfg = AssetsConfig(smart_illustrator_script=str(script))
+    p = resolve_image_provider(cfg, engine=AssetEngine.smart_illustrator)
+    assert isinstance(p, SmartIllustratorProvider)
+
+
+def test_factory_asset_engine_hint_falls_back_in_auto(monkeypatch):
+    monkeypatch.setattr(SmartIllustratorProvider, "is_available", staticmethod(lambda *a, **k: False))
+    p = resolve_image_provider(AssetsConfig(image_provider="auto"), engine=AssetEngine.gemini)
+    assert isinstance(p, PromptOnlyProvider)
+
+
+def test_smart_illustrator_provider_writes_prompt_and_calls_script(monkeypatch, tmp_path):
+    script = tmp_path / "generate-image.ts"
+    script.write_text("// ok", encoding="utf-8")
+    monkeypatch.setattr("shutil.which", lambda name: "npx" if name == "npx" else None)
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        out = Path(cmd[cmd.index("--output") + 1])
+        out.write_bytes(b"png")
+        return subprocess.CompletedProcess(cmd, 0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    provider = SmartIllustratorProvider(AssetsConfig(smart_illustrator_script=str(script)))
+    out = provider.generate(
+        Shot(index=1, image_prompt="信息图", image_file="shot_01.png"),
+        tmp_path / "assets",
+    )
+    assert out.read_bytes() == b"png"
+    assert (tmp_path / "assets" / "source" / "shot_01_smart_illustrator_prompt.txt").exists()
+    assert "--prompt-file" in calls[0][0]
 
 
 def test_comfyui_inject_prompt():

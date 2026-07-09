@@ -24,13 +24,16 @@ Theme: {theme}
 Target length: ~{duration} seconds, aspect ratio {aspect}, about {n_shots} lines.
 {intent}
 {formula}
+{research}
+{asset_engine}
 
 Return ONLY JSON:
 {{
   "lines": [
     {{"voiceover": "<one spoken line>",
       "duration_sec": <float>,
-      "broll_prompt": "<optional text-to-image prompt for a b-roll still, or empty>"}}
+      "broll_prompt": "<optional text-to-image prompt for a b-roll still, or empty>",
+      "asset_engine": "<optional: smart_illustrator|gemini|comfyui|manual>"}}
   ]
 }}
 """
@@ -48,6 +51,8 @@ Theme: {theme}
 Target length: ~{duration} seconds, aspect ratio {aspect}, about {n_shots} cards.
 {intent}
 {formula}
+{research}
+{asset_engine}
 
 Return ONLY JSON:
 {{
@@ -55,6 +60,7 @@ Return ONLY JSON:
     {{"caption": "<short on-screen text>",
       "voiceover": "<spoken line>",
       "image_prompt": "<text-to-image prompt for the card>",
+      "asset_engine": "<optional: smart_illustrator|gemini|comfyui|manual>",
       "duration_sec": <float>}}
   ]
 }}
@@ -79,6 +85,7 @@ non-contiguous. The first span must be a scroll-stopping hook. The kept spans sh
 together sum to roughly {duration} seconds.
 {intent}
 {formula}
+{research}
 
 Timestamped transcript (seconds):
 {segments}
@@ -104,6 +111,8 @@ Theme: {theme}
 Target length: ~{duration} seconds, aspect ratio {aspect}, about {n_shots} shots.
 {intent}
 {formula}
+{research}
+{asset_engine}
 
 Return ONLY JSON:
 {{
@@ -111,6 +120,7 @@ Return ONLY JSON:
     {{"duration_sec": <float>, "shot_type": "<close-up|wide|...>",
       "image_prompt": "<text-to-image prompt for the key frame>",
       "video_prompt": "<image-to-video prompt referencing that frame>",
+      "asset_engine": "<optional: smart_illustrator|gemini|comfyui|manual>",
       "voiceover": "<one line of narration>"}}
   ]
 }}
@@ -122,6 +132,27 @@ def formula_block(analysis: ViralAnalysis | None) -> str:
     if not analysis or not analysis.formula:
         return "No reference formula; design an original structure with a strong hook."
     return f"Apply this proven viral formula to the new theme:\n{analysis.formula}"
+
+
+def research_block(markdown: str) -> str:
+    text = markdown.strip()
+    if not text:
+        return "No research brief is available."
+    return (
+        "Use this research brief for facts, safer framing, and original angles. "
+        "Do not copy it verbatim; turn it into concise short-video narration.\n"
+        f"{text[:5000]}"
+    )
+
+
+def asset_engine_block() -> str:
+    return (
+        "For each generated still image, optionally set asset_engine. Use "
+        "'smart_illustrator' or 'gemini' for polished information graphics, "
+        "concept cards, metaphor images, and thumbnail-like visuals; use 'comfyui' "
+        "for photoreal/illustrative local image generation; use 'manual' only when "
+        "the shot should be created by a human. Omit asset_engine when unsure."
+    )
 
 
 def intent_block(args: GenerateArgs) -> str:
