@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from ai_clip.core.artifacts import read_artifact_manifest, write_artifact_manifest
@@ -8,6 +8,7 @@ from ai_clip.core.config import Config, RadarConfig
 from ai_clip.core.models import Platform
 from ai_clip.pair.models import PairReviewReport
 from ai_clip.radar.collect import (
+    collect_channel_with_diagnostics,
     collect_channels,
     collect_channels_with_diagnostics,
     entry_to_video,
@@ -350,6 +351,112 @@ def test_collect_channels_with_cookies(monkeypatch):
     assert len(snapshots) == 1
     assert snapshots[0].video.title == "A"
     assert seen_opts[0]["cookiefile"] == "c.txt"
+    assert seen_opts[0]["extract_flat"] is False
+
+
+def test_bilibili_collects_flat_then_stops_after_recent_boundary(monkeypatch):
+    today = datetime.now(timezone.utc).date()
+    recent = today.strftime("%Y%m%d")
+    old = (today - timedelta(days=10)).strftime("%Y%m%d")
+    calls = []
+    seen_opts = []
+
+    class FakeYDL:
+        def __init__(self, opts):
+            self.opts = opts
+            seen_opts.append(opts)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def extract_info(self, url, download=False):
+            calls.append(url)
+            if self.opts["extract_flat"]:
+                return {"entries": [
+                    {"id": "pinned-old"},
+                    {"id": "recent"},
+                    {"id": "old-boundary"},
+                    {"id": "never-requested"},
+                ]}
+            video_id = url.rsplit("/", 1)[-1]
+            upload_date = recent if video_id == "recent" else old
+            return {
+                "id": video_id,
+                "title": video_id,
+                "upload_date": upload_date,
+                "duration": 60,
+            }
+
+    import yt_dlp
+
+    monkeypatch.setattr(yt_dlp, "YoutubeDL", FakeYDL)
+    channel = ChannelSpec(platform=Platform.bilibili, url="https://space.bilibili.com/1")
+    videos, result = collect_channel_with_diagnostics(
+        channel,
+        RadarConfig(channel_limit=20, bilibili_detail_limit=8, since_days=2),
+    )
+
+    assert [video.video_id for video in videos] == ["bilibili:recent"]
+    assert result.status == "succeeded"
+    assert calls == [
+        "https://space.bilibili.com/1/video",
+        "https://www.bilibili.com/video/pinned-old",
+        "https://www.bilibili.com/video/recent",
+        "https://www.bilibili.com/video/old-boundary",
+    ]
+    assert seen_opts[0]["extract_flat"] is True
+    assert seen_opts[1]["extract_flat"] is False
+    assert seen_opts[1]["noplaylist"] is True
+
+
+def test_bilibili_isolates_detail_errors_and_honors_detail_limit(monkeypatch):
+    today = datetime.now(timezone.utc).date().strftime("%Y%m%d")
+    detail_calls = []
+
+    class FakeYDL:
+        def __init__(self, opts):
+            self.opts = opts
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def extract_info(self, url, download=False):
+            if self.opts["extract_flat"]:
+                return {"entries": [{"id": "bad"}, {"id": "good"}, {"id": "beyond-limit"}]}
+            video_id = url.rsplit("/", 1)[-1]
+            detail_calls.append(video_id)
+            if video_id == "bad":
+                raise RuntimeError("HTTP Error 412: Precondition Failed")
+            return {
+                "id": video_id,
+                "title": video_id,
+                "upload_date": today,
+                "duration": 60,
+            }
+
+    import yt_dlp
+
+    monkeypatch.setattr(yt_dlp, "YoutubeDL", FakeYDL)
+    videos, result = collect_channel_with_diagnostics(
+        ChannelSpec(
+            platform=Platform.bilibili,
+            url="https://space.bilibili.com/1",
+            cookies="bilibili.txt",
+        ),
+        RadarConfig(channel_limit=20, bilibili_detail_limit=2, since_days=2),
+    )
+
+    assert [video.video_id for video in videos] == ["bilibili:good"]
+    assert detail_calls == ["bad", "good"]
+    assert result.status == "partial"
+    assert result.count == 1
+    assert "bad: HTTP Error 412" in result.error
 
 
 def test_collect_channels_records_channel_failures(monkeypatch):

@@ -5,6 +5,7 @@ import multiprocessing as mp
 import queue
 import re
 import time
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -24,6 +25,12 @@ from ai_clip.radar.models import (
 
 class RadarCollectError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class _ChannelCollection:
+    videos: list[RadarVideo]
+    errors: list[str]
 
 
 def load_channels(path: str | Path) -> list[ChannelSpec]:
@@ -157,7 +164,7 @@ def collect_channel_with_diagnostics(
 ) -> tuple[list[RadarVideo], ChannelCollectResult]:
     start = time.monotonic()
     try:
-        videos = _collect_channel(channel, radar_cfg)
+        collection = _collect_channel(channel, radar_cfg)
     except Exception as exc:
         return [], ChannelCollectResult(
             platform=channel.platform,
@@ -167,22 +174,29 @@ def collect_channel_with_diagnostics(
             duration_sec=_elapsed(start),
             error=_sanitize_error(exc),
         )
-    return videos, ChannelCollectResult(
+    status = "succeeded"
+    if collection.errors:
+        status = "partial" if collection.videos else "failed"
+    return collection.videos, ChannelCollectResult(
         platform=channel.platform,
         url=channel.url,
         name=channel.name,
-        status="succeeded",
-        count=len(videos),
+        status=status,
+        count=len(collection.videos),
         duration_sec=_elapsed(start),
-        video_ids=[video.video_id for video in videos],
+        error="; ".join(collection.errors[:3]),
+        video_ids=[video.video_id for video in collection.videos],
     )
 
 
-def _collect_channel(channel: ChannelSpec, radar_cfg: RadarConfig) -> list[RadarVideo]:
+def _collect_channel(channel: ChannelSpec, radar_cfg: RadarConfig) -> _ChannelCollection:
     if channel.platform not in (Platform.youtube, Platform.bilibili):
         raise RadarCollectError(f"unsupported radar platform: {channel.platform}")
 
     import yt_dlp  # noqa: PLC0415
+
+    if channel.platform == Platform.bilibili:
+        return _collect_bilibili_channel(channel, radar_cfg, yt_dlp)
 
     opts = {
         "quiet": True,
@@ -217,7 +231,78 @@ def _collect_channel(channel: ChannelSpec, radar_cfg: RadarConfig) -> list[Radar
         if radar_cfg.since_days and video.age_days > radar_cfg.since_days:
             continue
         videos.append(video)
-    return videos
+    return _ChannelCollection(videos=videos, errors=[])
+
+
+def _collect_bilibili_channel(channel: ChannelSpec, radar_cfg: RadarConfig, yt_dlp) -> _ChannelCollection:
+    common_opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "noprogress": True,
+        "socket_timeout": 10,
+        "retries": 1,
+        "extractor_retries": 1,
+    }
+    if channel.cookies:
+        common_opts["cookiefile"] = channel.cookies
+
+    listing_opts = {
+        **common_opts,
+        "playlistend": radar_cfg.channel_limit,
+        "extract_flat": True,
+        "ignoreerrors": False,
+    }
+    with yt_dlp.YoutubeDL(listing_opts) as ydl:
+        info = ydl.extract_info(_listing_url(channel), download=False)
+
+    entries = info.get("entries", [info]) if info else []
+    detail_limit = max(min(radar_cfg.bilibili_detail_limit, radar_cfg.channel_limit), 1)
+    detail_opts = {
+        **common_opts,
+        "extract_flat": False,
+        "ignoreerrors": False,
+        "noplaylist": True,
+    }
+    videos: list[RadarVideo] = []
+    errors: list[str] = []
+    found_recent = False
+    with yt_dlp.YoutubeDL(detail_opts) as ydl:
+        for entry in entries[:detail_limit]:
+            if not entry:
+                continue
+            url = _entry_url(entry, channel)
+            try:
+                detail = ydl.extract_info(url, download=False)
+            except Exception as exc:
+                errors.append(f"{entry.get('id') or url}: {_sanitize_error(exc)}")
+                continue
+            if not detail:
+                errors.append(f"{entry.get('id') or url}: empty metadata")
+                continue
+            video = entry_to_video(detail, channel)
+            if radar_cfg.since_days and video.age_days > radar_cfg.since_days:
+                if found_recent:
+                    break
+                continue
+            found_recent = True
+            max_duration_sec = (
+                channel.max_duration_sec
+                if channel.max_duration_sec is not None
+                else radar_cfg.max_duration_sec
+            )
+            if max_duration_sec and video.duration_sec > max_duration_sec:
+                continue
+            videos.append(video)
+    return _ChannelCollection(videos=videos, errors=errors)
+
+
+def _entry_url(entry: dict, channel: ChannelSpec) -> str:
+    value = str(entry.get("webpage_url") or entry.get("url") or entry.get("id") or "")
+    if value.startswith("http"):
+        return value
+    if channel.platform == Platform.bilibili:
+        return f"https://www.bilibili.com/video/{value}"
+    return value
 
 
 def entry_to_video(entry: dict, channel: ChannelSpec) -> RadarVideo:

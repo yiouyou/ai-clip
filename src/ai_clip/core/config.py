@@ -84,6 +84,7 @@ class RadarConfig(BaseModel):
     top_n: int = 3
     shortlist_n: int = 9
     channel_limit: int = 20
+    bilibili_detail_limit: int = 8
     channel_timeout_sec: int = 60
     channel_workers: int = 4
     since_days: int = 2

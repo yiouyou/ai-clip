@@ -56,6 +56,7 @@ radar:
   top_n: 3
   shortlist_n: 9  # metadata candidates enriched before content reranking to final top_n
   channel_limit: 20
+  bilibili_detail_limit: 8  # max recent Bilibili entries expanded after a flat listing
   channel_timeout_sec: 60  # daily collect/run skip a stuck channel after this; 0 disables
   channel_workers: 4       # parallel channel collectors when timeout is enabled
   since_days: 2

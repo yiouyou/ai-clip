@@ -36,6 +36,11 @@ channels:
 `signal`、`reference` 或 `style`，`lens_fit` 表示与“用生物学/复杂系统解释政治经济科技”
 偏好的贴合度。
 
+B站频道使用两阶段采集：先读取最多 `radar.channel_limit` 个按时间倒序的 BV 号，再展开最多
+`radar.bilibili_detail_limit` 个详情（默认 8）。发现窗口内视频后遇到首条过期视频会提前停止；
+单条详情出现 HTTP 412 等错误时会跳过并把频道标记为 `partial`，已经获得的视频仍会进入快照。
+这两个上限和 `radar.since_days` 均可在 `config/default.yaml` 或自定义配置中调整。
+
 ## 主流程
 
 ```bash
