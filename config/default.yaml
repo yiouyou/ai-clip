@@ -31,12 +31,12 @@ tts:
   reference_seconds: 10.0            # reference snippet length for cloning
 
 pair:
-  base_url: ""     # set from NEWAPP_URL
+  base_url: ""     # set from NEWAPP_URL; OpenAI-compatible base should include /v1
   api_key: ""      # set from NEWAPP_API_KEY
   models:
-    - openai/gpt-5.5
-    - anthropic/claude-sonnet-4-8
-    - anthropic/claude-sonnet-4-6
+    - gpt-5.5
+    - claude-sonnet-4-6
+    - claude-opus-4.8
   deepseek_base_url: https://api.deepseek.com/v1
   deepseek_api_key: ""  # set from DEEPSEEK_API_KEY
   deepseek_models:

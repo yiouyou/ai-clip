@@ -60,9 +60,9 @@ class PairConfig(BaseModel):
     base_url: str = ""
     api_key: str = ""
     models: list[str] = Field(default_factory=lambda: [
-        "openai/gpt-5.5",
-        "anthropic/claude-sonnet-4-8",
-        "anthropic/claude-sonnet-4-6",
+        "gpt-5.5",
+        "claude-sonnet-4-6",
+        "claude-opus-4.8",
     ])
     deepseek_base_url: str = "https://api.deepseek.com/v1"
     deepseek_api_key: str = ""

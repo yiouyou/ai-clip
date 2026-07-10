@@ -20,10 +20,10 @@ def test_configured_models_includes_newapp_and_deepseek():
     cfg = Config()
     cfg.pair.base_url = "https://newapp.example/v1"
     cfg.pair.api_key = "new"
-    cfg.pair.models = ["openai/gpt-5.5"]
+    cfg.pair.models = ["gpt-5.5"]
     cfg.pair.deepseek_api_key = "deep"
     models = configured_models(cfg.pair)
-    assert [m.model for m in models] == ["openai/gpt-5.5", "deepseek-4-pro"]
+    assert [m.model for m in models] == ["gpt-5.5", "deepseek-4-pro"]
     assert models[0].base_url == "https://newapp.example/v1"
     assert models[1].base_url == "https://api.deepseek.com/v1"
 

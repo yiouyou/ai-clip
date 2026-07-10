@@ -127,6 +127,8 @@ MIMO_API_KEY
 AICLIP_COMFYUI_URL
 ```
 
+`NEWAPP_URL` 应填写 OpenAI-compatible 完整基址,包含 `/v1`。
+
 ## 本地检查
 
 不触发付费 API 的 Windows smoke:

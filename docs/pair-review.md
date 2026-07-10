@@ -8,7 +8,7 @@
 `.env` 可配置 OpenAI-compatible review endpoint:
 
 ```text
-NEWAPP_URL=https://...
+NEWAPP_URL=https://.../v1
 NEWAPP_API_KEY=...
 DEEPSEEK_API_KEY=...
 ```
@@ -16,9 +16,9 @@ DEEPSEEK_API_KEY=...
 默认模型池包含:
 
 ```text
-openai/gpt-5.5
-anthropic/claude-sonnet-4-8
-anthropic/claude-sonnet-4-6
+gpt-5.5
+claude-sonnet-4-6
+claude-opus-4.8
 deepseek-4-pro
 ```
 

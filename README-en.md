@@ -128,6 +128,8 @@ MIMO_API_KEY
 AICLIP_COMFYUI_URL
 ```
 
+`NEWAPP_URL` should be the full OpenAI-compatible base URL, including `/v1`.
+
 ## Local Checks
 
 Windows smoke test with no paid API calls:
