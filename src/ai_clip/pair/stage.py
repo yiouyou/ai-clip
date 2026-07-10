@@ -112,6 +112,8 @@ def rewrite_reviewed_artifact(
     if artifact not in REWRITABLE_ARTIFACTS:
         allowed = ", ".join(sorted(REWRITABLE_ARTIFACTS))
         raise PairReviewError(f"rewrite is only supported for: {allowed}")
+    if report.status == "blocked":
+        raise PairReviewError("cannot rewrite artifact because pair-review is blocked")
     if not source.exists():
         raise PairReviewError(f"{artifact} artifact not found: {source}")
     content = source.read_text(encoding="utf-8")

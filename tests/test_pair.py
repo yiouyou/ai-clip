@@ -143,6 +143,28 @@ def test_pair_rewrite_writes_revised_source_draft(monkeypatch, tmp_path):
     assert out.read_text(encoding="utf-8") == "# revised"
 
 
+def test_pair_rewrite_rejects_blocked_report(monkeypatch, tmp_path):
+    project = "demo"
+    root = tmp_path / project
+    root.mkdir()
+    (root / "source_draft.md").write_text("# draft", encoding="utf-8")
+    cfg = Config(data_dir=str(tmp_path))
+    report = PairReviewReport(
+        artifact="source_draft",
+        source_path=str(root / "source_draft.md"),
+        producer_model="producer",
+        status="blocked",
+        reviewers=[ReviewerResult(role="logic", ok=False, error="model unavailable")],
+    )
+
+    monkeypatch.setattr("ai_clip.pair.stage.llm_mod.chat", lambda *a, **k: "# revised")
+
+    with pytest.raises(PairReviewError, match="pair-review is blocked"):
+        rewrite_reviewed_artifact(cfg, project, "source_draft", report)
+
+    assert not (root / "source_draft.revised.md").exists()
+
+
 def test_pair_rewrite_writes_revised_script(monkeypatch, tmp_path):
     project = "demo"
     root = tmp_path / project

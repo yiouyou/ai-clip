@@ -599,6 +599,49 @@ def test_run_all_can_pair_review_and_rewrite(monkeypatch, tmp_path: Path):
     assert result.revised_draft_path.endswith("2026-01-02.revised.md")
 
 
+def test_run_all_skips_pair_rewrite_when_review_blocked(monkeypatch, tmp_path: Path):
+    calls = []
+
+    monkeypatch.setattr("ai_clip.radar.stage.run_collect", lambda *a, **k: 1)
+    monkeypatch.setattr("ai_clip.radar.stage.run_zack_ranking", lambda *a, **k: None)
+    monkeypatch.setattr("ai_clip.radar.stage.run_source_content", lambda *a, **k: None)
+    monkeypatch.setattr("ai_clip.radar.stage.run_zack_selection", lambda *a, **k: None)
+    monkeypatch.setattr("ai_clip.radar.stage.run_zack_draft", lambda *a, **k: None)
+
+    def fake_review(cfg, project, artifact, run_date=None):
+        calls.append(("review", project, artifact, run_date))
+        return PairReviewReport(
+            artifact=artifact,
+            source_path="draft.md",
+            producer_model="producer",
+            status="blocked",
+            reviewers=[],
+        )
+
+    def fake_rewrite(*args, **kwargs):
+        calls.append(("rewrite",))
+        raise AssertionError("blocked review must not be rewritten")
+
+    monkeypatch.setattr("ai_clip.pair.stage.review_artifact", fake_review)
+    monkeypatch.setattr("ai_clip.pair.stage.rewrite_reviewed_artifact", fake_rewrite)
+
+    result = run_all(
+        Config(data_dir=str(tmp_path)),
+        date="2026-01-02",
+        review=True,
+        rewrite=True,
+    )
+
+    assert calls == [("review", "radar", "zack_draft", "2026-01-02")]
+    assert result.review_path.endswith("2026-01-02_zack_draft_review.json")
+    assert result.revised_draft_path == ""
+
+    status = json.loads((tmp_path / "radar" / "runs" / "2026-01-02.json").read_text())
+    rewrite_stage = next(stage for stage in status["stages"] if stage["name"] == "pair-rewrite")
+    assert rewrite_stage["status"] == "skipped"
+    assert rewrite_stage["metrics"]["reason"] == "pair-review blocked"
+
+
 def test_run_all_rejects_active_lock(tmp_path: Path):
     lock_dir = tmp_path / "radar" / "locks"
     lock_dir.mkdir(parents=True)

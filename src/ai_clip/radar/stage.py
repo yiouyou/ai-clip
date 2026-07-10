@@ -625,6 +625,12 @@ def _run_pair_review(cfg: Config, date: str, rewrite: bool = False) -> tuple[str
             "pair-rewrite",
             inputs={"draft": str(paths.existing_draft_md()), "review": review_path},
         ) as stage:
+            if report.status == "blocked":
+                stage.set(
+                    status="skipped",
+                    metrics={"reason": "pair-review blocked"},
+                )
+                return review_path, revised_path
             revised = rewrite_reviewed_artifact(
                 cfg,
                 "radar",

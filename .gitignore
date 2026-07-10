@@ -12,6 +12,8 @@ __pycache__/
 /products/*
 !/products/*.example.yaml
 /baseline.md
+/notes.md
+/task_plan.md
 .pytest_cache/
 .ruff_cache/
 *.egg-info/
