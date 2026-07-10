@@ -60,6 +60,7 @@ ai-clip original -p promo --theme "城市夜骑 vlog 开场" --shots 5
 
 ```bash
 ai-clip source-draft "<clip-url>" -p demo --research --theme "用复杂系统解释这个事件"
+ai-clip source-draft "<clip-url>" -p demo --whisper-model small   # 长视频 CPU 转写更快
 ```
 
 项目级研究:
@@ -81,7 +82,7 @@ ai-clip daily-radar --top 3 --research --research-searches 1
 |------|------|
 | `ai-clip transcribe <url> -p P` | 下载、转写并导出 `.srt` / `.txt` |
 | `ai-clip teardown <url> -p P` | 下载、转写并拆解爆款公式 |
-| `ai-clip source-draft <url> -p P` | 单视频生成原创口播稿 |
+| `ai-clip source-draft <url> -p P` | 单视频生成原创口播稿;默认复用已有中间产物,`--no-resume` 可强制重跑 |
 | `ai-clip research -p P --theme T` | 生成 `research.json` 和可编辑 `research.md` |
 | `ai-clip storyboard -p P --theme T` | 生成分镜、素材 prompt 和 `storyboard.md` |
 | `ai-clip review -p P` / `--apply` | `storyboard.json` 和 `script.md` 往返 |

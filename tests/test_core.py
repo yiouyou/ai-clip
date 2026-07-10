@@ -16,6 +16,12 @@ from ai_clip.core.config import load_config
 from ai_clip.core.device import whisper_runtime
 from ai_clip.core.models import Clip, Platform, Shot
 from ai_clip.core.paths import ProjectPaths, read_model, write_model
+from ai_clip.core.run_status import (
+    RunStage,
+    WorkflowRunStatus,
+    mark_stale_running_stages,
+    write_workflow_status,
+)
 
 
 class ExampleArtifact(BaseModel):
@@ -105,6 +111,32 @@ def test_project_artifact_statuses(tmp_path: Path):
     statuses = {item.name: item.status for item in project_artifact_statuses(pp)}
 
     assert statuses["research"] == "stale"
+
+
+def test_mark_stale_running_workflow_stages(tmp_path: Path):
+    pp = ProjectPaths(tmp_path, "demo")
+    pp.ensure()
+    write_workflow_status(
+        pp,
+        WorkflowRunStatus(
+            workflow="source_draft",
+            project="demo",
+            status="running",
+            stages=[
+                RunStage(
+                    name="extract",
+                    status="running",
+                    started_at="2026-01-01T00:00:00+00:00",
+                )
+            ],
+        ),
+    )
+
+    run = mark_stale_running_stages(pp, "source_draft", older_than_minutes=0)
+
+    assert run.status == "stale"
+    assert run.stages[0].status == "stale"
+    assert run.stages[0].error == "previous run did not finish"
 
 
 def test_shot_expected_files():

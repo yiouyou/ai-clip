@@ -128,6 +128,89 @@ def test_source_draft_can_run_research_before_draft(monkeypatch, tmp_path):
     assert calls == ["download", "extract", "analyze", ("research", "biology lens"), "source_draft"]
 
 
+def test_source_draft_reuses_existing_artifacts_by_default(monkeypatch, tmp_path):
+    calls = []
+    root = tmp_path / "demo"
+    root.mkdir()
+    (root / "clip.json").write_text(
+        '{"clip_id":"demo","source_url":"url","platform":"youtube","video_path":"v.mp4"}',
+        encoding="utf-8",
+    )
+    (root / "transcript.json").write_text(
+        '{"clip_id":"demo","language":"zh","text":"text","segments":[]}',
+        encoding="utf-8",
+    )
+    (root / "analysis.json").write_text(
+        '{"clip_id":"demo","intent":"info","hook":"hook","formula":"formula"}',
+        encoding="utf-8",
+    )
+    (root / "research.md").write_text("research", encoding="utf-8")
+    (root / "source_draft.md").write_text("draft", encoding="utf-8")
+
+    for name in [
+        "run_download",
+        "run_extract",
+        "run_analyze",
+        "run_research",
+        "run_source_draft",
+    ]:
+        monkeypatch.setattr("ai_clip.workflows.pipeline." + name, _record(calls, name))
+
+    result = workflows.source_draft(
+        Config(data_dir=str(tmp_path)),
+        "demo",
+        "https://example.com/video",
+        research=True,
+    )
+
+    assert result["hook"] == "hook"
+    assert result["draft"] == str(root / "source_draft.md")
+    assert calls == []
+
+
+def test_source_draft_no_resume_forces_stages(monkeypatch, tmp_path):
+    calls = []
+    root = tmp_path / "demo"
+    root.mkdir()
+    (root / "clip.json").write_text(
+        '{"clip_id":"demo","source_url":"url","platform":"youtube","video_path":"v.mp4"}',
+        encoding="utf-8",
+    )
+    (root / "transcript.json").write_text(
+        '{"clip_id":"demo","language":"zh","text":"text","segments":[]}',
+        encoding="utf-8",
+    )
+    (root / "analysis.json").write_text(
+        '{"clip_id":"demo","intent":"info","hook":"old","formula":"old"}',
+        encoding="utf-8",
+    )
+    (root / "source_draft.md").write_text("old", encoding="utf-8")
+
+    monkeypatch.setattr("ai_clip.workflows.pipeline.run_download", _record(calls, "download"))
+    monkeypatch.setattr("ai_clip.workflows.pipeline.run_extract", _record(calls, "extract"))
+    monkeypatch.setattr(
+        "ai_clip.workflows.pipeline.run_analyze",
+        lambda c, p, i: calls.append("analyze")
+        or ViralAnalysis(clip_id=p, intent=i, hook="new", formula="new"),
+    )
+    monkeypatch.setattr(
+        "ai_clip.workflows.pipeline.run_source_draft",
+        lambda c, p, intent=Intent.info, stance="": calls.append("source_draft")
+        or "source_draft.md",
+    )
+
+    result = workflows.source_draft(
+        Config(data_dir=str(tmp_path)),
+        "demo",
+        "https://example.com/video",
+        resume=False,
+    )
+
+    assert result["hook"] == "new"
+    assert result["draft"] == "source_draft.md"
+    assert calls == ["download", "extract", "analyze", "source_draft"]
+
+
 def test_remix_full_auto(monkeypatch, tmp_path):
     calls = []
     for name in ["run_download", "run_extract", "run_analyze"]:

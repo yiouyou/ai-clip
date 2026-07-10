@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from ai_clip import pipeline
 from ai_clip.core.config import Config
-from ai_clip.core.models import Intent, Platform, ProductProfile, VideoFormat
-from ai_clip.core.paths import ProjectPaths
-from ai_clip.core.run_status import track_workflow_stage
+from ai_clip.core.models import Intent, Platform, ProductProfile, VideoFormat, ViralAnalysis
+from ai_clip.core.paths import ProjectPaths, read_model
+from ai_clip.core.run_status import mark_stale_running_stages, track_workflow_stage
 from ai_clip.produce.assemble import check_assets
 
 
@@ -77,29 +77,85 @@ def source_draft(
     use_subtitles: bool = False,
     research: bool = False,
     theme: str = "",
+    resume: bool = True,
 ) -> dict:
     """W7 单视频原创口播: download -> extract -> analyze -> [research] -> source_draft."""
     workflow = "source_draft"
-    with _stage(cfg, project, workflow, "download", {"url": url}):
-        pipeline.run_download(cfg, project, url)
+    pp = _paths(cfg, project)
+    mark_stale_running_stages(pp, workflow, older_than_minutes=0)
+    if resume and pp.clip_json.exists():
+        with _stage(cfg, project, workflow, "download", {"url": url}) as stage:
+            stage.set(
+                status="skipped",
+                outputs={"clip": str(pp.clip_json)},
+                metrics={"reused": True},
+            )
+    else:
+        with _stage(cfg, project, workflow, "download", {"url": url}) as stage:
+            clip = pipeline.run_download(cfg, project, url)
+            stage.set(outputs={"clip": getattr(clip, "video_path", str(pp.clip_json))})
     with _stage(
         cfg,
         project,
         workflow,
         "extract",
         {"use_subtitles": str(use_subtitles)},
-    ):
-        pipeline.run_extract(cfg, project, use_subtitles=use_subtitles)
-    with _stage(cfg, project, workflow, "analyze", {"intent": intent.value}) as stage:
-        analysis = pipeline.run_analyze(cfg, project, intent)
-        stage.set(metrics={"intent": analysis.intent})
+    ) as stage:
+        if resume and pp.transcript_json.exists():
+            stage.set(
+                status="skipped",
+                outputs={"transcript": str(pp.transcript_json)},
+                metrics={"reused": True},
+            )
+        else:
+            transcript = pipeline.run_extract(cfg, project, use_subtitles=use_subtitles)
+            stage.set(
+                outputs={"transcript": str(pp.transcript_json)},
+                metrics={
+                    "segments": len(getattr(transcript, "segments", [])),
+                    "language": getattr(transcript, "language", ""),
+                },
+            )
+    if resume and pp.analysis_json.exists():
+        with _stage(cfg, project, workflow, "analyze", {"intent": intent.value}) as stage:
+            analysis = read_model(pp.analysis_json, ViralAnalysis)
+            stage.set(
+                status="skipped",
+                outputs={"analysis": str(pp.analysis_json)},
+                metrics={"intent": analysis.intent, "reused": True},
+            )
+    else:
+        with _stage(cfg, project, workflow, "analyze", {"intent": intent.value}) as stage:
+            analysis = pipeline.run_analyze(cfg, project, intent)
+            stage.set(
+                outputs={"analysis": str(pp.analysis_json)},
+                metrics={"intent": analysis.intent},
+            )
     if research:
-        with _stage(cfg, project, workflow, "research", {"theme": theme}) as stage:
-            research_md = pipeline.run_research(cfg, project, theme=theme)
-            stage.set(outputs={"research": str(research_md)})
-    with _stage(cfg, project, workflow, "source-draft", {"stance": stance}) as stage:
-        draft = pipeline.run_source_draft(cfg, project, intent=intent, stance=stance)
-        stage.set(outputs={"draft": str(draft)})
+        if resume and pp.research_md.exists():
+            with _stage(cfg, project, workflow, "research", {"theme": theme}) as stage:
+                research_md = pp.research_md
+                stage.set(
+                    status="skipped",
+                    outputs={"research": str(research_md)},
+                    metrics={"reused": True},
+                )
+        else:
+            with _stage(cfg, project, workflow, "research", {"theme": theme}) as stage:
+                research_md = pipeline.run_research(cfg, project, theme=theme)
+                stage.set(outputs={"research": str(research_md)})
+    if resume and pp.source_draft_md.exists():
+        with _stage(cfg, project, workflow, "source-draft", {"stance": stance}) as stage:
+            draft = pp.source_draft_md
+            stage.set(
+                status="skipped",
+                outputs={"draft": str(draft)},
+                metrics={"reused": True},
+            )
+    else:
+        with _stage(cfg, project, workflow, "source-draft", {"stance": stance}) as stage:
+            draft = pipeline.run_source_draft(cfg, project, intent=intent, stance=stance)
+            stage.set(outputs={"draft": str(draft)})
     return {
         "workflow": workflow,
         "hook": analysis.hook,

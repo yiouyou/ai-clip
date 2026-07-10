@@ -61,6 +61,7 @@ Single-source original draft:
 
 ```bash
 ai-clip source-draft "<clip-url>" -p demo --research --theme "explain this through complex systems"
+ai-clip source-draft "<clip-url>" -p demo --whisper-model small   # faster CPU transcription for long videos
 ```
 
 Project research:
@@ -82,7 +83,7 @@ ai-clip daily-radar --top 3 --research --research-searches 1
 |---------|---------|
 | `ai-clip transcribe <url> -p P` | Download, transcribe, and export `.srt` / `.txt` |
 | `ai-clip teardown <url> -p P` | Download, transcribe, and analyze viral formula |
-| `ai-clip source-draft <url> -p P` | Generate an original talking-head draft from one source |
+| `ai-clip source-draft <url> -p P` | Generate an original talking-head draft from one source; reuses existing artifacts by default, use `--no-resume` to force a rerun |
 | `ai-clip research -p P --theme T` | Write `research.json` and editable `research.md` |
 | `ai-clip storyboard -p P --theme T` | Generate storyboard, prompts, and `storyboard.md` |
 | `ai-clip review -p P` / `--apply` | Round-trip `storyboard.json` through `script.md` |

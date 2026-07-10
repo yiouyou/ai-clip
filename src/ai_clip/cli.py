@@ -624,15 +624,23 @@ def source_draft(
     intent: Intent = typer.Option(Intent.info, "--intent", "-i"),
     stance: str = typer.Option("", "--stance"),
     subs: bool = typer.Option(False, "--subs", help="use the video's subtitles instead of whisper"),
+    whisper_model: str = typer.Option(
+        None,
+        "--whisper-model",
+        help="override whisper model for this run, e.g. tiny|base|small|medium|large-v3",
+    ),
     research: bool = typer.Option(False, "--research", help="run project research before drafting"),
     theme: str = typer.Option("", "--theme", help="research theme; defaults to source-derived context"),
     research_searches: int = typer.Option(
         None, "--research-searches", help="Tavily searches when --research is set; clamped to 1-3"
     ),
+    resume: bool = typer.Option(True, "--resume/--no-resume", help="reuse existing artifacts when present"),
     config: str = typer.Option(None, "--config"),
 ):
     """Single source video -> original talking-head draft in the creator's preferred lens."""
     cfg = _cfg(config)
+    if whisper_model:
+        cfg.whisper.model_size = whisper_model
     if research_searches is not None:
         cfg.source_research.max_searches = research_searches
     r = workflows.source_draft(
@@ -644,6 +652,7 @@ def source_draft(
         use_subtitles=subs,
         research=research,
         theme=theme,
+        resume=resume,
     )
     console.print(f"[green]source-draft[/] -> {r['draft']}")
 

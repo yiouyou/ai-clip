@@ -71,7 +71,7 @@ uv venv --python 3.12
 uv pip install -e ".[dev]"                      # 核心 + 测试
 uv pip install -e ".[download,extract,llm]"     # 运行时重依赖(yt-dlp、faster-whisper)
 ruff check src tests        # lint(必须通过)
-pytest -q                   # 179 个测试,须保持全绿
+pytest -q                   # 182 个测试,须保持全绿
 ```
 需要 PATH 上有 **ffmpeg + ffprobe**。开发机的 `.env` 已配:`DEEPSEEK_API_KEY`、
 `OPENAI_API_KEY`、`GEMINI_API_KEY`、`MIMO_API_KEY`、`PEXELS_API_KEY`、`TAVILY_API_KEY`。

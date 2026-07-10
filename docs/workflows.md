@@ -49,6 +49,10 @@ ai-clip remix "<url>" -p demo --theme "..." --research --research-searches 1
 ai-clip original -p demo --theme "..." --research --research-searches 1
 ```
 
+`source-draft` 默认复用已有中间产物: `clip.json`、`transcript.json`、`analysis.json`、
+`research.md` 和 `source_draft.md`。需要强制重跑时使用 `--no-resume`。长视频在 CPU
+上转写较慢时,可用 `--whisper-model small` 临时降低本次转写模型。
+
 组合 workflow 会写运行状态:
 
 ```text

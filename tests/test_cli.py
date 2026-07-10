@@ -190,6 +190,7 @@ def test_source_draft_command_can_enable_research(monkeypatch, tmp_path):
         use_subtitles=False,
         research=False,
         theme="",
+        resume=True,
     ):
         seen.update({
             "project": project,
@@ -197,6 +198,8 @@ def test_source_draft_command_can_enable_research(monkeypatch, tmp_path):
             "research": research,
             "theme": theme,
             "max_searches": cfg.source_research.max_searches,
+            "whisper_model": cfg.whisper.model_size,
+            "resume": resume,
         })
         return {"draft": "source_draft.md"}
 
@@ -213,6 +216,9 @@ def test_source_draft_command_can_enable_research(monkeypatch, tmp_path):
             "biology lens",
             "--research-searches",
             "1",
+            "--whisper-model",
+            "small",
+            "--no-resume",
             "--config",
             str(tmp_path / "missing.yaml"),
         ],
@@ -225,6 +231,8 @@ def test_source_draft_command_can_enable_research(monkeypatch, tmp_path):
         "research": True,
         "theme": "biology lens",
         "max_searches": 1,
+        "whisper_model": "small",
+        "resume": False,
     }
     assert "source_draft.md" in result.output
 
