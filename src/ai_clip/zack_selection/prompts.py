@@ -14,9 +14,19 @@ Candidate videos:
 
 Selection rules:
 - Select exactly ONE candidate as today's main topic.
+- Copy that candidate's exact video_id into selected_video_id. Candidate numbers
+  and selected_index are 1-based; selected_video_id and selected_index must refer
+  to the same candidate.
 - Prefer topics that can support an original biology/complex-systems angle.
 - Treat source titles as trend signals, not verified facts.
 - Separate topic sensitivity from factual risk.
+- fact_risk measures the consequences and verification burden of the claims, not
+  the source's reputation. Mark medical or health efficacy, safety, diagnosis,
+  treatment, dosage, and clinical-trial claims as high risk, even when the source
+  is a reputable outlet such as TED. Also use high for other consequential or
+  actively disputed claims that require current primary-source verification.
+- Use low only for low-stakes, established claims that do not materially change
+  after fact checking; uncertainty about the classification defaults to medium.
 - Do not choose weather-only topics unless the mechanism is unusually strong.
 - The research_focus list must be ordered by search priority. Each item should
   describe a different research angle, not a duplicate title query.
@@ -28,6 +38,7 @@ Selection rules:
 
 Return JSON only:
 {{
+  "selected_video_id": "youtube:exact-id-from-candidate",
   "selected_index": 1,
   "topic": "...",
   "angle": "...",

@@ -24,6 +24,7 @@ from ai_clip.radar.models import (
 from ai_clip.radar.research_policy import automatic_research_searches
 from ai_clip.source_content import add_source_content
 from ai_clip.zack_ranking import RankingFeedback, rank_videos, rerank_by_content, score_video
+from ai_clip.zack_selection.selector import generate_zack_selection
 from ai_clip.radar.stage import (
     run_collect,
     run_source_research,
@@ -870,6 +871,41 @@ def test_zack_selection_writes_json_and_markdown(monkeypatch, tmp_path: Path):
     assert (tmp_path / "radar" / "selections" / "2026-01-02.md").exists()
     manifest = read_artifact_manifest(tmp_path / "radar" / "selections" / "2026-01-02.json")
     assert manifest.stage == "zack-selection"
+
+
+def test_zack_selection_prefers_video_id_when_model_index_conflicts(monkeypatch):
+    candidates = RadarCandidates(
+        date="2026-01-02",
+        top_n=2,
+        videos=[
+            RadarVideo(
+                video_id="youtube:first",
+                url="https://example.com/1",
+                platform=Platform.youtube,
+                title="First",
+            ),
+            RadarVideo(
+                video_id="youtube:second",
+                url="https://example.com/2",
+                platform=Platform.youtube,
+                title="Second",
+            ),
+        ],
+    )
+    monkeypatch.setattr(
+        "ai_clip.zack_selection.selector.chat",
+        lambda *args, **kwargs: json.dumps({
+            "selected_video_id": "youtube:second",
+            "selected_index": 1,
+            "topic": "Second topic",
+        }),
+    )
+
+    selection = generate_zack_selection(candidates, Config().llm)
+
+    assert selection.selected_video_id == "youtube:second"
+    assert selection.selected_index == 2
+    assert selection.selected_video.title == "Second"
 
 
 def test_zack_selection_rejects_empty_candidates_before_llm(monkeypatch, tmp_path: Path):

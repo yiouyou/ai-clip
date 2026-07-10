@@ -91,6 +91,11 @@ def _selection_from_data(candidates: RadarCandidates, data: dict) -> ZackSelecti
 
 
 def _selected_index(data: dict, videos: list[RadarVideo]) -> int:
+    selected_id = str(data.get("selected_video_id") or "").strip()
+    if selected_id:
+        for index, video in enumerate(videos, start=1):
+            if video.video_id == selected_id:
+                return index
     try:
         index = int(data.get("selected_index") or 1)
     except (TypeError, ValueError):
@@ -122,6 +127,7 @@ def _videos_for_prompt(videos: list[RadarVideo]) -> str:
         transcript = video.transcript_text[:3500] if video.transcript_text else "(no script available)"
         blocks.append("\n".join([
             f"## Candidate {i}",
+            f"video_id: {video.video_id}",
             f"title: {video.title}",
             f"url: {video.url}",
             f"platform: {video.platform}",
