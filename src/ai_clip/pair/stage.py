@@ -5,13 +5,17 @@ from pathlib import Path
 from ai_clip.core import billing
 from ai_clip.core.config import Config
 from ai_clip.core import llm as llm_mod
-from ai_clip.core.artifacts import write_text_atomic
+from ai_clip.core.artifacts import (
+    ArtifactRef,
+    artifact_matches,
+    write_artifact_manifest,
+    write_text_atomic,
+)
 from ai_clip.core.llm import extract_json
-from ai_clip.core.paths import ProjectPaths, write_model
+from ai_clip.core.paths import write_model
 from ai_clip.pair import client
 from ai_clip.pair.models import PairReviewReport, ReviewerResult, ReviewIssue
 from ai_clip.pair.prompts import LOGIC_SYSTEM, REVIEW_USER, STYLE_SYSTEM
-from ai_clip.radar.storage import RadarPaths
 
 _ROLE_SYSTEMS = {
     "logic": LOGIC_SYSTEM,
@@ -51,15 +55,61 @@ def review_artifact(
     artifact: str,
     run_date: str | None = None,
 ) -> PairReviewReport:
-    artifact = _normalize_artifact(artifact)
-    pp = ProjectPaths(cfg.data_dir, project)
-    pp.ensure()
-    source, out = _artifact_paths(cfg, pp, artifact, run_date)
+    target = _resolve_artifact(cfg, project, artifact, run_date)
+    return review_artifact_ref(cfg, project, target)
+
+
+def review_artifact_ref(
+    cfg: Config,
+    project: str,
+    target: ArtifactRef,
+) -> PairReviewReport:
+    return _review_path(
+        cfg,
+        project,
+        target,
+        source=target.source,
+        output=target.review,
+        kind="review",
+        billing_stage="pair_review",
+    )
+
+
+def verify_rewritten_artifact(
+    cfg: Config,
+    project: str,
+    artifact: str,
+    run_date: str | None = None,
+) -> PairReviewReport:
+    target = _resolve_artifact(cfg, project, artifact, run_date)
+    if target.revised is None or target.verification is None:
+        raise PairReviewError(f"{target.name} does not support rewrite verification")
+    return _review_path(
+        cfg,
+        project,
+        target,
+        source=target.revised,
+        output=target.verification,
+        kind="verify",
+        billing_stage="pair_verify",
+    )
+
+
+def _review_path(
+    cfg: Config,
+    project: str,
+    target: ArtifactRef,
+    *,
+    source: Path,
+    output: Path,
+    kind: str,
+    billing_stage: str,
+) -> PairReviewReport:
     if not source.exists():
-        raise PairReviewError(f"{artifact} artifact not found: {source}")
+        raise PairReviewError(f"{target.name} artifact not found: {source}")
     content = source.read_text(encoding="utf-8")
     if not content.strip():
-        raise PairReviewError(f"{artifact} artifact is empty: {source}")
+        raise PairReviewError(f"{target.name} artifact is empty: {source}")
 
     models = _review_model_pool(cfg)
     if len({m.model for m in models}) < 2:
@@ -67,13 +117,13 @@ def review_artifact(
 
     used: set[str] = set()
     results: list[ReviewerResult] = []
-    with billing.account(pp.root, "pair_review"):
+    with billing.account(target.billing_root, billing_stage):
         for role, system in _ROLE_SYSTEMS.items():
             result = _run_role(
                 role=role,
                 system=system,
                 content=content,
-                artifact=artifact,
+                artifact=target.name,
                 project=project,
                 producer_model=cfg.llm.model,
                 models=models,
@@ -89,13 +139,21 @@ def review_artifact(
         status = "blocked"
 
     report = PairReviewReport(
-        artifact=artifact,
+        artifact=target.name,
         source_path=str(source),
+        kind=kind,
         producer_model=cfg.llm.model,
         status=status,
         reviewers=results,
     )
-    write_model(out, report)
+    write_model(output, report)
+    write_artifact_manifest(
+        output,
+        stage=f"pair-{kind}",
+        inputs=[source],
+        params=_review_params(cfg, kind),
+        model=",".join(result.model for result in results if result.model),
+    )
     return report
 
 
@@ -106,108 +164,84 @@ def rewrite_reviewed_artifact(
     report: PairReviewReport,
     run_date: str | None = None,
 ) -> Path:
-    artifact = _normalize_artifact(artifact)
-    source, _ = _artifact_paths(cfg, ProjectPaths(cfg.data_dir, project), artifact, run_date)
-    out = _rewrite_path(cfg, project, artifact, run_date)
-    if artifact not in REWRITABLE_ARTIFACTS:
+    target = _resolve_artifact(cfg, project, artifact, run_date)
+    return rewrite_artifact_ref(cfg, target, report)
+
+
+def rewrite_artifact_ref(
+    cfg: Config,
+    target: ArtifactRef,
+    report: PairReviewReport,
+) -> Path:
+    if target.name not in REWRITABLE_ARTIFACTS or target.revised is None:
         allowed = ", ".join(sorted(REWRITABLE_ARTIFACTS))
         raise PairReviewError(f"rewrite is only supported for: {allowed}")
     if report.status == "blocked":
         raise PairReviewError("cannot rewrite artifact because pair-review is blocked")
-    if not source.exists():
-        raise PairReviewError(f"{artifact} artifact not found: {source}")
-    content = source.read_text(encoding="utf-8")
-    with billing.account(_artifact_root(cfg, project, artifact, run_date), "pair_rewrite"):
+    if not target.source.exists():
+        raise PairReviewError(f"{target.name} artifact not found: {target.source}")
+    content = target.source.read_text(encoding="utf-8")
+    with billing.account(target.billing_root, "pair_rewrite"):
         revised = llm_mod.chat(
             cfg.llm,
             system=REWRITE_SYSTEM,
             user=REWRITE_USER.format(
-                artifact=artifact,
+                artifact=target.name,
                 content=content,
                 report=report.model_dump_json(indent=2),
             ),
         )
-    write_text_atomic(out, revised.strip(), encoding="utf-8")
-    return out
+    write_text_atomic(target.revised, revised.strip(), encoding="utf-8")
+    write_artifact_manifest(
+        target.revised,
+        stage="pair-rewrite",
+        inputs=[target.source, target.review],
+        params={"artifact": target.name, "prompt_version": "1"},
+        model=cfg.llm.model,
+    )
+    return target.revised
 
 
-def _artifact_paths(
-    cfg: Config,
-    pp: ProjectPaths,
-    artifact: str,
-    run_date: str | None,
-) -> tuple[Path, Path]:
-    if artifact == "zack_draft":
-        if not run_date:
-            raise PairReviewError("zack_draft review requires --date")
-        paths = RadarPaths(cfg.data_dir, run_date)
-        return paths.existing_draft_md(), paths.reviews_dir / f"{run_date}_zack_draft_review.json"
-    mapping = {
-        "analysis": pp.analysis_json,
-        "research": pp.research_md,
-        "script": pp.script_md,
-        "source_draft": pp.source_draft_md,
-        "storyboard": pp.storyboard_md,
-    }
-    if artifact not in mapping:
-        allowed_items = sorted([*mapping, "zack_draft"])
-        allowed = ", ".join(allowed_items)
-        raise PairReviewError(f"unknown artifact {artifact!r}; expected one of: {allowed}")
-    return mapping[artifact], pp.reviews_dir / f"{artifact}_review.json"
+def pair_artifact_freshness(cfg: Config, target: ArtifactRef) -> dict[str, bool]:
+    review = artifact_matches(
+        target.review,
+        inputs=[target.source],
+        params=_review_params(cfg, "review"),
+    )
+    rewrite = bool(
+        target.revised
+        and artifact_matches(
+            target.revised,
+            inputs=[target.source, target.review],
+            params={"artifact": target.name, "prompt_version": "1"},
+            model=cfg.llm.model,
+        )
+    )
+    verify = bool(
+        rewrite
+        and target.revised
+        and target.verification
+        and artifact_matches(
+            target.verification,
+            inputs=[target.revised],
+            params=_review_params(cfg, "verify"),
+        )
+    )
+    return {"review": review, "rewrite": rewrite, "verify": verify}
 
 
-def _rewrite_path(
-    cfg: Config,
-    project: str,
-    artifact: str,
-    run_date: str | None,
-) -> Path:
-    pp = ProjectPaths(cfg.data_dir, project)
-    if artifact == "research":
-        return pp.root / "research.revised.md"
-    if artifact == "script":
-        return pp.root / "script.revised.md"
-    if artifact == "source_draft":
-        return pp.source_draft_revised_md
-    if artifact == "zack_draft":
-        if not run_date:
-            raise PairReviewError("zack_draft rewrite requires --date")
-        return RadarPaths(cfg.data_dir, run_date).draft_revised_md
-    allowed = ", ".join(sorted(REWRITABLE_ARTIFACTS))
-    raise PairReviewError(f"rewrite is only supported for: {allowed}")
-
-
-def _artifact_root(
+def _resolve_artifact(
     cfg: Config,
     project: str,
     artifact: str,
     run_date: str | None,
-) -> Path:
-    if artifact == "zack_draft":
-        if not run_date:
-            raise PairReviewError("zack_draft rewrite requires --date")
-        return RadarPaths(cfg.data_dir, run_date).root
-    return ProjectPaths(cfg.data_dir, project).root
+) -> ArtifactRef:
+    from ai_clip.artifact_catalog import resolve_review_artifact
 
-
-def _normalize_artifact(artifact: str) -> str:
-    if artifact in {"radar_draft", "scout_draft"}:
-        return "zack_draft"
-    return artifact
-
-
-def _artifact_path(pp: ProjectPaths, artifact: str) -> Path:
-    mapping = {
-        "analysis": pp.analysis_json,
-        "research": pp.research_md,
-        "script": pp.script_md,
-        "source_draft": pp.source_draft_md,
-        "storyboard": pp.storyboard_md,
-    }
-    if artifact not in mapping:
-        allowed = ", ".join(sorted(mapping))
-        raise PairReviewError(f"unknown artifact {artifact!r}; expected one of: {allowed}")
-    return mapping[artifact]
+    try:
+        return resolve_review_artifact(cfg, project, artifact, run_date)
+    except ValueError as exc:
+        raise PairReviewError(str(exc)) from exc
 
 
 def _review_model_pool(cfg: Config) -> list[client.ReviewModel]:
@@ -217,6 +251,15 @@ def _review_model_pool(cfg: Config) -> list[client.ReviewModel]:
     if len({m.model for m in without_producer}) >= 2:
         return without_producer
     return models
+
+
+def _review_params(cfg: Config, kind: str) -> dict[str, str]:
+    models = client.configured_models(cfg.pair)
+    return {
+        "kind": kind,
+        "producer_model": cfg.llm.model,
+        "reviewer_pool": ",".join(f"{model.base_url.rstrip('/')}|{model.model}" for model in models),
+    }
 
 
 def _run_role(

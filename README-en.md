@@ -25,6 +25,7 @@ Detailed docs:
 - **Per-project artifacts**: everything lives under `data/<project>/`.
 - **Lightweight metadata**: key artifacts write `<artifact>.meta.json` for freshness checks.
 - **Observable workflows**: composed workflows write `data/<project>/runs/<workflow>.json`.
+- **Composable capabilities**: acquisition, research, and review use shared engines with thin workflow adapters.
 
 ## Requirements
 
@@ -37,7 +38,7 @@ Detailed docs:
 ```bash
 uv venv --python 3.12
 uv pip install -e ".[dev]"
-uv pip install -e ".[download,extract,llm]"
+uv pip install -e ".[download,extract]"
 cp .env.example .env
 ```
 
@@ -74,7 +75,8 @@ ai-clip storyboard -p demo --theme "AI companies as ecological niches"
 Daily topic radar:
 
 ```bash
-ai-clip daily-radar --top 3 --research --research-searches 1
+ai-clip daily-radar --top 3
+ai-clip radar-feedback accept --date 2026-07-09 --reason "useful angle"
 ```
 
 ## Common Commands
@@ -83,17 +85,19 @@ ai-clip daily-radar --top 3 --research --research-searches 1
 |---------|---------|
 | `ai-clip transcribe <url> -p P` | Download, transcribe, and export `.srt` / `.txt` |
 | `ai-clip teardown <url> -p P` | Download, transcribe, and analyze viral formula |
-| `ai-clip source-draft <url> -p P` | Generate an original talking-head draft from one source; reuses existing artifacts by default, use `--no-resume` to force a rerun |
+| `ai-clip source-draft <url> -p P` | Generate an original talking-head draft; reuses artifacts only when URL, parameters, model, and upstream inputs match, or use `--no-resume` |
 | `ai-clip research -p P --theme T` | Write `research.json` and editable `research.md` |
 | `ai-clip storyboard -p P --theme T` | Generate storyboard, prompts, and `storyboard.md` |
 | `ai-clip review -p P` / `--apply` | Round-trip `storyboard.json` through `script.md` |
-| `ai-clip pair-review -p P --artifact script` | Multi-model review of text artifacts |
+| `ai-clip pair-review -p P --artifact script --rewrite` | Multi-model review, one rewrite, and verification |
 | `ai-clip status -p P` | Show artifact freshness and missing assets |
 | `ai-clip status -p P --json` | Emit machine-readable project status |
 | `ai-clip assets -p P` | Generate missing image assets |
 | `ai-clip voiceover -p P` | Generate voiceover |
 | `ai-clip assemble -p P` | Assemble final mp4 |
 | `ai-clip doctor` | Diagnose local environment |
+| `ai-clip radar-feedback accept\|reject --date D` | Record explicit topic feedback for ranking calibration |
+| `ai-clip run-status --workflow W -p P --json` | Inspect run stages, artifacts, history, and API usage |
 
 ## Video Formats
 

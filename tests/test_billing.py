@@ -22,14 +22,21 @@ def test_account_records_and_summarizes(tmp_path):
         billing.record_llm("deepseek-v4-pro", 1_000_000, 1_000_000)
     with billing.account(tmp_path, "voiceover"):
         billing.record_tts("mimo", 500)
+    with billing.account(tmp_path, "source_research"):
+        billing.record_search("tavily", "query", 3)
 
     s = billing.summarize(tmp_path)
-    assert s["total"]["calls"] == 2
+    assert s["total"]["calls"] == 3
+    assert s["total"]["searches"] == 1
     assert s["total"]["input_tokens"] == 1_000_000
     assert s["total"]["chars"] == 500
     # 0.435 + 0.87 = 1.305 for the llm call
     assert round(s["by_stage"]["analyze"], 4) == 1.305
     assert "deepseek-v4-pro" in s["by_model"]
+    assert s["by_kind"] == {"llm": 1, "tts": 1, "search": 1}
+
+    future = billing.summarize(tmp_path, since=9_999_999_999.0)
+    assert future["total"]["calls"] == 0
 
 
 def test_summarize_missing_file(tmp_path):

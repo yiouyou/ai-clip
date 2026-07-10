@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import multiprocessing as mp
+import queue
 import re
 import time
 from datetime import datetime, timedelta, timezone
@@ -64,6 +66,89 @@ def collect_channels_with_diagnostics(
         snapshots=snapshots,
         channels=results,
     )
+
+
+def collect_channels_with_timeout(
+    channels: list[ChannelSpec],
+    radar_cfg: RadarConfig,
+    timeout_sec: int,
+) -> RadarCollectReport:
+    collected_at = datetime.now(timezone.utc).isoformat()
+    snapshots: list[RadarSnapshot] = []
+    results: list[ChannelCollectResult] = []
+    seen: set[str] = set()
+    ctx = mp.get_context("spawn")
+    pending = list(channels)
+    running: dict[int, tuple[mp.Process, object, ChannelSpec, float]] = {}
+    max_workers = max(int(radar_cfg.channel_workers or 1), 1)
+    while pending or running:
+        while pending and len(running) < max_workers:
+            channel = pending.pop(0)
+            result_queue = ctx.Queue()
+            process = ctx.Process(
+                target=_collect_channel_process,
+                args=(channel, radar_cfg, result_queue),
+            )
+            process.start()
+            running[process.pid or id(process)] = (
+                process,
+                result_queue,
+                channel,
+                time.monotonic(),
+            )
+
+        for key, (process, result_queue, channel, start) in list(running.items()):
+            try:
+                raw = result_queue.get_nowait()
+            except queue.Empty:
+                if time.monotonic() - start >= timeout_sec:
+                    process.terminate()
+                    process.join(timeout=5)
+                    results.append(ChannelCollectResult(
+                        platform=channel.platform,
+                        url=channel.url,
+                        name=channel.name,
+                        status="timeout",
+                        duration_sec=round(timeout_sec, 3),
+                        error=f"channel collect exceeded {timeout_sec}s",
+                    ))
+                    del running[key]
+                elif not process.is_alive():
+                    process.join(timeout=1)
+                    results.append(ChannelCollectResult(
+                        platform=channel.platform,
+                        url=channel.url,
+                        name=channel.name,
+                        status="failed",
+                        duration_sec=round(max(time.monotonic() - start, 0.0), 3),
+                        error=f"collector process exited with code {process.exitcode}",
+                    ))
+                    del running[key]
+                continue
+            process.join(timeout=5)
+            del running[key]
+            result = ChannelCollectResult.model_validate(raw["result"])
+            results.append(result)
+            for raw_video in raw["videos"]:
+                video = RadarSnapshot.model_validate({
+                    "collected_at": collected_at,
+                    "video": raw_video,
+                }).video
+                if video.video_id in seen:
+                    continue
+                seen.add(video.video_id)
+                snapshots.append(RadarSnapshot(collected_at=collected_at, video=video))
+        if running:
+            time.sleep(0.05)
+    return RadarCollectReport(collected_at=collected_at, snapshots=snapshots, channels=results)
+
+
+def _collect_channel_process(channel: ChannelSpec, radar_cfg: RadarConfig, result_queue) -> None:
+    videos, result = collect_channel_with_diagnostics(channel, radar_cfg)
+    result_queue.put({
+        "videos": [video.model_dump(mode="json") for video in videos],
+        "result": result.model_dump(mode="json"),
+    })
 
 
 def collect_channel_with_diagnostics(

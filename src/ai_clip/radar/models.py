@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from ai_clip.core.models import Platform, TranscriptSegment
+from ai_clip.core.run_status import RunStage, WorkflowRunStatus
 
 
 class ChannelSpec(BaseModel):
@@ -62,7 +66,22 @@ class RadarSnapshot(BaseModel):
 class RadarCandidates(BaseModel):
     date: str
     top_n: int
+    shortlist_n: int = 0
+    ranking_phase: str = "final"
     videos: list[RadarVideo] = Field(default_factory=list)
+
+
+class RadarFeedbackEvent(BaseModel):
+    date: str
+    video_id: str
+    decision: Literal["accept", "reject"]
+    reason: str = ""
+    title: str = ""
+    topic: str = ""
+    pool: str = "general"
+    platform: Platform
+    tags: list[str] = Field(default_factory=list)
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
 class ZackSelection(BaseModel):
@@ -95,6 +114,7 @@ class RadarRunResult(BaseModel):
     run_status_path: str = ""
     review_path: str = ""
     revised_draft_path: str = ""
+    verification_path: str = ""
 
 
 class RadarBackfillResult(BaseModel):
@@ -122,24 +142,11 @@ class RadarCollectReport(BaseModel):
     channels: list[ChannelCollectResult] = Field(default_factory=list)
 
 
-class RadarRunStage(BaseModel):
-    name: str
-    status: str = "pending"
-    started_at: str = ""
-    finished_at: str = ""
-    duration_sec: float = 0.0
-    inputs: dict[str, str] = Field(default_factory=dict)
-    outputs: dict[str, str] = Field(default_factory=dict)
-    metrics: dict[str, str | int | float | bool] = Field(default_factory=dict)
-    error: str = ""
+RadarRunStage = RunStage
 
 
-class RadarRunStatus(BaseModel):
+class RadarRunStatus(WorkflowRunStatus):
     workflow: str = "daily-radar"
     date: str
-    status: str = "pending"
-    started_at: str = ""
-    updated_at: str = ""
-    stages: list[RadarRunStage] = Field(default_factory=list)
 
 

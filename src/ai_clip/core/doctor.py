@@ -2,13 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import importlib.util
-import os
 from pathlib import Path
 import shutil
 import tempfile
 
 from ai_clip.core.config import Config
-from ai_clip.radar.collect import load_channels
 
 
 @dataclass(frozen=True)
@@ -19,7 +17,7 @@ class DoctorCheck:
     hint: str = ""
 
 
-def run_doctor(cfg: Config) -> list[DoctorCheck]:
+def run_core_doctor(cfg: Config) -> list[DoctorCheck]:
     checks = [
         _check_data_dir(Path(cfg.data_dir)),
         _check_binary("ffmpeg"),
@@ -30,7 +28,6 @@ def run_doctor(cfg: Config) -> list[DoctorCheck]:
         _check_pair_key(cfg),
         _check_tavily_key(cfg),
         _check_mimo_key(cfg),
-        _check_channels(cfg),
     ]
     return checks
 
@@ -115,36 +112,3 @@ def _check_mimo_key(cfg: Config) -> DoctorCheck:
         status="warn",
         hint="set MIMO_API_KEY to use voiceover",
     )
-
-
-def _check_channels(cfg: Config) -> DoctorCheck:
-    path = Path(cfg.radar.channels_path)
-    if not path.exists():
-        return DoctorCheck(
-            name="radar_channels",
-            status="warn",
-            detail=str(path),
-            hint="copy config/channels.example.yaml to config/channels.yaml",
-        )
-    try:
-        channels = load_channels(path)
-    except Exception as exc:
-        return DoctorCheck(
-            name="radar_channels",
-            status="fail",
-            detail=str(path),
-            hint=f"cannot parse channels: {exc}",
-        )
-    missing_cookies = [
-        channel.cookies
-        for channel in channels
-        if channel.cookies and not Path(os.path.expandvars(channel.cookies)).exists()
-    ]
-    if missing_cookies:
-        return DoctorCheck(
-            name="radar_channels",
-            status="warn",
-            detail=f"{len(channels)} channel(s)",
-            hint=f"missing cookie file: {missing_cookies[0]}",
-        )
-    return DoctorCheck(name="radar_channels", status="pass", detail=f"{len(channels)} channel(s)")

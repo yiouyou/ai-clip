@@ -24,6 +24,7 @@ class ReviewerResult(BaseModel):
 class PairReviewReport(BaseModel):
     artifact: str
     source_path: str
+    kind: str = "review"
     producer_model: str = ""
     status: str = "failed"
     reviewers: list[ReviewerResult] = Field(default_factory=list)

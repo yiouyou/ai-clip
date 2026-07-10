@@ -19,7 +19,6 @@ dependencies = [
 # Heavy / environment-specific deps are opt-in so the core stays importable and testable.
 download = ["yt-dlp>=2025.1"]
 extract = ["faster-whisper>=1.1"]
-llm = ["openai>=1.55,<2"]
 dev = ["pytest>=8.3", "pytest-cov>=6.0", "ruff>=0.8"]
 
 [project.scripts]

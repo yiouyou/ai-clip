@@ -18,7 +18,11 @@ uv run ai-clip doctor --config $ConfigPath
 
 Write-Host "== status json =="
 $StatusJson = uv run ai-clip status -p empty --config $ConfigPath --json
-$Status = $StatusJson | ConvertFrom-Json
+$Envelope = $StatusJson | ConvertFrom-Json
+$Status = $Envelope.result
+if ($Envelope.schema_version -ne 1 -or $Envelope.command -ne "status") {
+    throw "unexpected JSON envelope"
+}
 if ($Status.project -ne "empty") {
     throw "unexpected status project: $($Status.project)"
 }

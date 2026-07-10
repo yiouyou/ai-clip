@@ -1,9 +1,11 @@
 from pathlib import Path
 
+import pytest
 from pydantic import BaseModel
 
 from ai_clip.core.artifacts import (
     ArtifactStore,
+    artifact_matches,
     artifact_is_stale,
     artifact_manifest_is_stale,
     artifact_manifest_path,
@@ -19,9 +21,13 @@ from ai_clip.core.paths import ProjectPaths, read_model, write_model
 from ai_clip.core.run_status import (
     RunStage,
     WorkflowRunStatus,
+    begin_workflow_run,
     mark_stale_running_stages,
+    read_workflow_status,
+    track_workflow_stage,
     write_workflow_status,
 )
+from ai_clip.core.run_lock import RunLock
 
 
 class ExampleArtifact(BaseModel):
@@ -82,6 +88,42 @@ def test_artifact_manifest_detects_stale_inputs(tmp_path: Path):
     assert artifact_manifest_is_stale(artifact)
 
 
+def test_artifact_matches_invocation_metadata(tmp_path: Path):
+    source = tmp_path / "source.txt"
+    artifact = tmp_path / "artifact.txt"
+    source.write_text("source", encoding="utf-8")
+    artifact.write_text("result", encoding="utf-8")
+    write_artifact_manifest(
+        artifact,
+        stage="draft",
+        inputs=[source],
+        params={"intent": "info"},
+        model="model-a",
+        config_hash="prompt-v1",
+    )
+
+    assert artifact_matches(
+        artifact,
+        inputs=[source],
+        params={"intent": "info"},
+        model="model-a",
+        config_hash="prompt-v1",
+    )
+    assert not artifact_matches(artifact, inputs=[source], params={"intent": "emotion"})
+    assert not artifact_matches(artifact, inputs=[source], model="model-b")
+    assert not artifact_matches(artifact, inputs=[source], config_hash="prompt-v2")
+
+
+def test_corrupt_artifact_manifest_is_stale(tmp_path: Path):
+    artifact = tmp_path / "artifact.txt"
+    artifact.write_text("result", encoding="utf-8")
+    artifact_manifest_path(artifact).write_text("not-json", encoding="utf-8")
+
+    assert artifact_is_stale(artifact)
+    assert artifact_manifest_is_stale(artifact)
+    assert not artifact_matches(artifact)
+
+
 def test_artifact_store_manifest_helpers(tmp_path: Path):
     store = ArtifactStore(tmp_path / "project")
     source = store.write_text("source.txt", content="v1")
@@ -139,6 +181,58 @@ def test_mark_stale_running_workflow_stages(tmp_path: Path):
     assert run.stages[0].error == "previous run did not finish"
 
 
+def test_begin_workflow_run_archives_previous_attempt(tmp_path: Path):
+    pp = ProjectPaths(tmp_path, "demo")
+    pp.ensure()
+    first = begin_workflow_run(pp, "source_draft")
+    with track_workflow_stage(pp, "source_draft", "download"):
+        pass
+    completed = read_workflow_status(pp, "source_draft")
+
+    second = begin_workflow_run(pp, "source_draft")
+
+    assert first.run_id == completed.run_id
+    assert second.run_id != first.run_id
+    assert second.attempt == 2
+    history = pp.runs_dir / "history" / "source_draft" / f"{first.run_id}.json"
+    archived = WorkflowRunStatus.model_validate_json(history.read_text(encoding="utf-8"))
+    assert archived.status == "succeeded"
+    assert archived.stages[0].name == "download"
+
+
+def test_begin_workflow_run_archives_interrupted_stage_as_stale(tmp_path: Path):
+    pp = ProjectPaths(tmp_path, "demo")
+    pp.ensure()
+    first = begin_workflow_run(pp, "source_draft")
+    write_workflow_status(
+        pp,
+        first.model_copy(update={
+            "status": "running",
+            "stages": [RunStage(name="extract", status="running")],
+        }),
+    )
+
+    begin_workflow_run(pp, "source_draft")
+
+    history = pp.runs_dir / "history" / "source_draft" / f"{first.run_id}.json"
+    archived = WorkflowRunStatus.model_validate_json(history.read_text(encoding="utf-8"))
+    assert archived.status == "stale"
+    assert archived.stages[0].status == "stale"
+    assert archived.stages[0].error == "previous run did not finish"
+
+
+def test_run_lock_blocks_concurrent_owner_and_releases(tmp_path: Path):
+    path = tmp_path / "workflow.lock"
+
+    with RunLock(path, "workflow already running"):
+        assert path.exists()
+        with pytest.raises(RuntimeError, match="already running"):
+            with RunLock(path, "workflow already running"):
+                pass
+
+    assert not path.exists()
+
+
 def test_shot_expected_files():
     shot = Shot(index=1, image_file="shot_01.png", video_file="shot_01.mp4")
     assert shot.expected_files() == ["shot_01.png", "shot_01.mp4"]
@@ -178,7 +272,7 @@ def test_config_env_override(tmp_path: Path, monkeypatch):
     assert cfg.source_research.max_searches == 3
 
 
-def test_config_accepts_legacy_scout_key(tmp_path: Path):
+def test_config_ignores_removed_scout_key(tmp_path: Path):
     config = tmp_path / "config.yaml"
     config.write_text(
         """
@@ -191,16 +285,16 @@ scout:
 
     cfg = load_config(config)
 
-    assert cfg.radar.channels_path == "config/legacy-channels.yaml"
-    assert cfg.radar.top_n == 2
+    assert cfg.radar.channels_path == "config/channels.yaml"
+    assert cfg.radar.top_n == 3
 
 
-def test_config_accepts_legacy_scout_env(tmp_path: Path, monkeypatch):
+def test_config_ignores_removed_scout_env(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("AICLIP_SCOUT_CHANNELS", "config/legacy-env-channels.yaml")
 
     cfg = load_config(tmp_path / "missing.yaml")
 
-    assert cfg.radar.channels_path == "config/legacy-env-channels.yaml"
+    assert cfg.radar.channels_path == "config/channels.yaml"
 
 
 def test_whisper_runtime_cpu(monkeypatch):

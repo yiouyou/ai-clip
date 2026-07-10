@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 _DEFAULT_CONFIG = Path(__file__).resolve().parents[3] / "config" / "default.yaml"
 
@@ -82,6 +82,7 @@ class RadarConfig(BaseModel):
     channels_path: str = "config/channels.yaml"
     feedback_path: str = "config/radar-feedback.yaml"
     top_n: int = 3
+    shortlist_n: int = 9
     channel_limit: int = 20
     channel_timeout_sec: int = 60
     channel_workers: int = 4
@@ -90,6 +91,9 @@ class RadarConfig(BaseModel):
     timezone: str = "Asia/Shanghai"
     transcribe_missing: bool = True
     transcribe_model_size: str = "small"
+    auto_research: bool = True
+    auto_research_min_risk: str = "high"
+    auto_research_max_searches: int = 2
 
 
 class Config(BaseModel):
@@ -104,15 +108,6 @@ class Config(BaseModel):
     pair: PairConfig = Field(default_factory=PairConfig)
     source_research: SourceResearchConfig = Field(default_factory=SourceResearchConfig)
     radar: RadarConfig = Field(default_factory=RadarConfig)
-
-    @model_validator(mode="before")
-    @classmethod
-    def _migrate_legacy_keys(cls, data):
-        if isinstance(data, dict) and "radar" not in data and "scout" in data:
-            data = dict(data)
-            data["radar"] = data["scout"]
-        return data
-
 
 def _resolve_llm_key(base_url: str) -> str:
     """Pick the provider-specific key from the env based on the endpoint.
@@ -177,27 +172,18 @@ def _apply_env(cfg: Config) -> Config:
             os.getenv("AICLIP_SOURCE_RESEARCH_MAX_RESULTS", ""),
             cfg.source_research.max_results,
         )
-    cfg.radar.channels_path = (
-        os.getenv("AICLIP_RADAR_CHANNELS")
-        or os.getenv("AICLIP_SCOUT_CHANNELS")
-        or cfg.radar.channels_path
-    )
+    cfg.radar.channels_path = os.getenv("AICLIP_RADAR_CHANNELS", cfg.radar.channels_path)
     transcribe_missing = os.getenv("AICLIP_RADAR_TRANSCRIBE_MISSING")
-    if transcribe_missing is None:
-        transcribe_missing = os.getenv("AICLIP_SCOUT_TRANSCRIBE_MISSING")
     if transcribe_missing is not None:
         cfg.radar.transcribe_missing = _env_bool(
             transcribe_missing,
             cfg.radar.transcribe_missing,
         )
-    cfg.radar.transcribe_model_size = (
-        os.getenv("AICLIP_RADAR_TRANSCRIBE_MODEL_SIZE")
-        or os.getenv("AICLIP_SCOUT_TRANSCRIBE_MODEL_SIZE")
-        or cfg.radar.transcribe_model_size
+    cfg.radar.transcribe_model_size = os.getenv(
+        "AICLIP_RADAR_TRANSCRIBE_MODEL_SIZE",
+        cfg.radar.transcribe_model_size,
     )
     channel_timeout = os.getenv("AICLIP_RADAR_CHANNEL_TIMEOUT_SEC")
-    if channel_timeout is None:
-        channel_timeout = os.getenv("AICLIP_SCOUT_CHANNEL_TIMEOUT_SEC")
     if channel_timeout is not None:
         cfg.radar.channel_timeout_sec = _env_int(
             channel_timeout,

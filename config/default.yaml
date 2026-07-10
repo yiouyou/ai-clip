@@ -54,6 +54,7 @@ radar:
   channels_path: config/channels.yaml
   feedback_path: config/radar-feedback.yaml
   top_n: 3
+  shortlist_n: 9  # metadata candidates enriched before content reranking to final top_n
   channel_limit: 20
   channel_timeout_sec: 60  # daily collect/run skip a stuck channel after this; 0 disables
   channel_workers: 4       # parallel channel collectors when timeout is enabled
@@ -62,3 +63,6 @@ radar:
   timezone: Asia/Shanghai
   transcribe_missing: true  # if no subtitles, download bestaudio and use faster-whisper
   transcribe_model_size: small  # radar speed default; main extract still uses whisper.model_size
+  auto_research: true
+  auto_research_min_risk: high  # low|medium|high
+  auto_research_max_searches: 2  # still subject to the global hard cap of 3

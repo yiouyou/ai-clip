@@ -7,6 +7,7 @@ paths and writing durable text/JSON/model artifacts.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 import os
 from datetime import datetime, timezone
@@ -14,6 +15,18 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+
+@dataclass(frozen=True)
+class ArtifactRef:
+    """Resolved paths for a reviewable artifact, independent of workflow layout."""
+
+    name: str
+    source: Path
+    review: Path
+    billing_root: Path
+    revised: Path | None = None
+    verification: Path | None = None
 
 
 class ArtifactInput(BaseModel):
@@ -108,7 +121,10 @@ def artifact_is_stale(path: Path, inputs: list[Path] | tuple[Path, ...] = ()) ->
     manifest_path = artifact_manifest_path(path)
     if not manifest_path.exists():
         return True
-    manifest = read_artifact_manifest(path)
+    try:
+        manifest = read_artifact_manifest(path)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return True
     current = snapshot_inputs(inputs)
     return _inputs_changed(manifest.inputs, current)
 
@@ -119,12 +135,39 @@ def artifact_manifest_is_stale(path: Path) -> bool:
     manifest_path = artifact_manifest_path(path)
     if not manifest_path.exists():
         return True
-    manifest = read_artifact_manifest(path)
+    try:
+        manifest = read_artifact_manifest(path)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return True
     current = {
         key: snapshot_input(Path(item.path))
         for key, item in manifest.inputs.items()
     }
     return _inputs_changed(manifest.inputs, current)
+
+
+def artifact_matches(
+    path: Path,
+    *,
+    inputs: list[Path] | tuple[Path, ...] = (),
+    params: dict[str, str] | None = None,
+    model: str | None = None,
+    config_hash: str | None = None,
+) -> bool:
+    """Return whether an artifact was produced for the expected invocation."""
+    if artifact_is_stale(path, inputs):
+        return False
+    try:
+        manifest = read_artifact_manifest(path)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return False
+    if params is not None and manifest.params != params:
+        return False
+    if model is not None and manifest.model != model:
+        return False
+    if config_hash is not None and manifest.config_hash != config_hash:
+        return False
+    return True
 
 
 def _inputs_changed(

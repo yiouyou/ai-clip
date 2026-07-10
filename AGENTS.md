@@ -30,9 +30,15 @@ discover → download → extract → analyze → storyboard → [review] → (a
 | voiceover | `produce/voiceover.py` + `produce/tts/mimo.py` | MiMo TTS | 默认克隆源说话人音色 |
 | assemble | `produce/assemble.py`(+ `captions.py`、`core/fonts.py`) | ffmpeg | 拼接、配音、可选烧字幕 |
 
-编排:`pipeline.py`(各 `run_*` 函数,每个都开 `billing.account()` 块)。
-组合工作流:`workflows.py`(transcribe/teardown/remix/original)。
-为将来 agent 层准备的工具注册表:`tools.py`。
+阶段适配:`pipeline.py`(各 `run_*` 函数,付费调用使用 `billing.account()` 块)。
+组合工作流:`workflows.py`；统一阶段/工作流目录:`registry.py` + `core/stages.py`，负责命名、
+输入输出、runner、CLI/tool 暴露、执行顺序和 optional 条件。`tools.py` 从该注册表生成。
+Radar 阶段、完整编排、回填分别在 `radar/stage.py`、`radar/workflow.py`、`radar/backfill.py`。
+Daily Radar 顺序是 `collect -> zack-ranking -> source-content -> content-rerank ->`
+`zack-selection -> [source-research] -> zack-draft -> [pair-review -> pair-rewrite -> pair-verify]`。
+Ranking 先按频道/平台批次基线归一化并保留默认 9 个
+shortlist，获取脚本后再收敛到最终 Top 3；高事实风险且 Tavily 可用时自动触发最多 2 次搜索。
+明确的 accept/reject 反馈写入 `data/radar/feedback/events.jsonl`，参与后续 pool/tag 校准。
 外部 produce 后端(可选,用于和自建对比):`produce/backends/`
 (`moneyprinter.py` REST adapter、`narrato.py` 子进程硬接)。
 
@@ -69,9 +75,9 @@ discover → download → extract → analyze → storyboard → [review] → (a
 ```bash
 uv venv --python 3.12
 uv pip install -e ".[dev]"                      # 核心 + 测试
-uv pip install -e ".[download,extract,llm]"     # 运行时重依赖(yt-dlp、faster-whisper)
+uv pip install -e ".[download,extract]"         # 运行时重依赖(yt-dlp、faster-whisper)
 ruff check src tests        # lint(必须通过)
-pytest -q                   # 182 个测试,须保持全绿
+pytest -q                   # 215 个测试,须保持全绿
 ```
 需要 PATH 上有 **ffmpeg + ffprobe**。开发机的 `.env` 已配:`DEEPSEEK_API_KEY`、
 `OPENAI_API_KEY`、`GEMINI_API_KEY`、`MIMO_API_KEY`、`PEXELS_API_KEY`、`TAVILY_API_KEY`。
@@ -107,22 +113,14 @@ remix)、`e2e`(80s 片)、`mpttest`、`comfyui_test`。
   一个工作单元完成并验证后 commit + push 到 `main`。
 - 双语 README:`README.md`(中文默认)+ `README-en.md`;两版都要更新。
 
-## 待办(按优先级)
+## 后续方向
 
-1. **`research` 阶段(主要的下一步)** —— 在 `analyze` 和 `storyboard` 之间加一个
-   人工介入的深度研究步骤。已定 provider:**Tavily**(`.env` 里有 `TAVILY_API_KEY`)。
-   建 `research/`:(a) LLM 从文稿/分析里抽关键论点/查询;(b) `search.py` provider 调
-   Tavily;(c) LLM 把结果综合成**新观点 + 引用** → `data/<project>/research.json` +
-   可编辑的 `research.md`。加 `ai-clip research -p P`(之后人工编辑 `research.md`);
-   `storyboard` 应读取 `research.json` 并通过 `produce/formats/prompts.py` 里新增的一个块
-   注入(和 `formula_block`/`intent_block` 并列)。Tavily 调用 + LLM 计入 billing。
-   人工可编辑文件照 `review.py` 的往返模式做。
-2. **A2 remix 时长收敛** —— remix 以 `--duration` 为目标,但实际超时(dario 要 60s 出
+1. **A2 remix 时长收敛** —— remix 以 `--duration` 为目标,但实际超时(dario 要 60s 出
    ~107s)。收紧:给 LLM 更强约束,且/或在 `produce/formats/remix.py` 里裁/缩片段使总时长
    贴近目标。
-3. **review 体验** —— `review.py` 目前只往返解说 + remix 时间戳;再支持 slideshow 的
+2. **review 体验** —— `review.py` 目前只往返解说 + remix 时间戳;再支持 slideshow 的
    `caption` 编辑;apply 时可加总时长校验。
-4. 可选/次要:storyboard 审片 **UI**(基于 `script.md` 的薄 Streamlit);基于 `tools.py` 的
+3. 可选/次要:storyboard 审片 **UI**(基于 `script.md` 的薄 Streamlit);基于 `tools.py` 的
    **agent 层**(质量自检/重试,一句话 url→mp4)。
 
 ## 坑
@@ -131,8 +129,8 @@ remix)、`e2e`(80s 片)、`mpttest`、`comfyui_test`。
   `captions.py`/`assemble.py`(字体复制进临时目录、ffmpeg 用 `cwd` 运行)。Git Bash 里
   `/e/...` 路径在 Python 内会失败,用 `E:/...`。
 - **Windows pid 检测**:不要用 `os.kill(pid, 0)` 判断进程是否存在。Unix 上这是探测,
-  但 Windows 上可能终止目标进程。`RadarRunLock` 这类锁应使用 WinAPI
-  `OpenProcess`/`CloseHandle` 或等价安全方法;此前 targeted pytest 自杀就是这个坑。
+  但 Windows 上可能终止目标进程。项目/Radar 锁统一使用 `core/run_lock.py`，Windows 通过
+  WinAPI `OpenProcess`/`CloseHandle` 探测；此前 targeted pytest 自杀就是这个坑。
 - **Codex 插件稳定性**:若 Codex 崩溃并提示
   `interface.defaultPrompt[0]: prompt must be at most 128 characters`,先检查
   `C:/Users/Administrator/.codex/.tmp/.../.codex-plugin/plugin.json`。本机曾因

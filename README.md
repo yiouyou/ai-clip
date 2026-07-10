@@ -24,6 +24,7 @@ discover -> download -> extract -> analyze -> research -> storyboard -> review -
 - **项目产物独立**: 每个项目都在 `data/<project>/` 下，可单独重跑阶段。
 - **轻量 metadata**: 关键产物写 `<artifact>.meta.json`，用于判断 `fresh/stale/missing`。
 - **可观测流程**: 组合 workflow 写 `data/<project>/runs/<workflow>.json`。
+- **能力可组合**: 视频内容获取、research 和 review 使用共享引擎，workflow 只保留领域适配。
 
 ## 环境要求
 
@@ -36,7 +37,7 @@ discover -> download -> extract -> analyze -> research -> storyboard -> review -
 ```bash
 uv venv --python 3.12
 uv pip install -e ".[dev]"
-uv pip install -e ".[download,extract,llm]"
+uv pip install -e ".[download,extract]"
 cp .env.example .env
 ```
 
@@ -73,7 +74,8 @@ ai-clip storyboard -p demo --theme "AI 公司的生态位竞争"
 每日选题:
 
 ```bash
-ai-clip daily-radar --top 3 --research --research-searches 1
+ai-clip daily-radar --top 3
+ai-clip radar-feedback accept --date 2026-07-09 --reason "选题角度合适"
 ```
 
 ## 常用命令
@@ -82,17 +84,19 @@ ai-clip daily-radar --top 3 --research --research-searches 1
 |------|------|
 | `ai-clip transcribe <url> -p P` | 下载、转写并导出 `.srt` / `.txt` |
 | `ai-clip teardown <url> -p P` | 下载、转写并拆解爆款公式 |
-| `ai-clip source-draft <url> -p P` | 单视频生成原创口播稿;默认复用已有中间产物,`--no-resume` 可强制重跑 |
+| `ai-clip source-draft <url> -p P` | 单视频生成原创口播稿;默认只复用与本次 URL、参数、模型及上游输入匹配的产物,`--no-resume` 可强制重跑 |
 | `ai-clip research -p P --theme T` | 生成 `research.json` 和可编辑 `research.md` |
 | `ai-clip storyboard -p P --theme T` | 生成分镜、素材 prompt 和 `storyboard.md` |
 | `ai-clip review -p P` / `--apply` | `storyboard.json` 和 `script.md` 往返 |
-| `ai-clip pair-review -p P --artifact script` | 多模型互审文本产物 |
+| `ai-clip pair-review -p P --artifact script --rewrite` | 多模型互审、单次改写并验证 |
 | `ai-clip status -p P` | 查看 artifact freshness 和素材缺失 |
 | `ai-clip status -p P --json` | 输出机器可读项目状态 |
 | `ai-clip assets -p P` | 生成缺失图片素材 |
 | `ai-clip voiceover -p P` | 生成配音 |
 | `ai-clip assemble -p P` | 合成最终 mp4 |
 | `ai-clip doctor` | 本地环境诊断 |
+| `ai-clip radar-feedback accept\|reject --date D` | 记录明确选题反馈，用于后续排序校准 |
+| `ai-clip run-status --workflow W -p P --json` | 查看一次运行的阶段、产物、历史目录和 API 用量 |
 
 ## 视频体裁
 

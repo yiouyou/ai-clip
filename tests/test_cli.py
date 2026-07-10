@@ -4,6 +4,7 @@ from typer.testing import CliRunner
 
 from ai_clip import cli
 from ai_clip.core.doctor import DoctorCheck
+from ai_clip.pair.models import PairReviewReport, ReviewerResult
 
 
 def test_daily_radar_is_top_level_workflow_command(monkeypatch):
@@ -92,6 +93,27 @@ def test_daily_radar_can_enable_source_research(monkeypatch):
     }
     assert "review.json" in result.output
     assert "draft.revised.md" in result.output
+
+
+def test_daily_radar_json_uses_standard_envelope(monkeypatch):
+    runner = CliRunner()
+    monkeypatch.setattr(
+        "ai_clip.cli.workflows.daily_radar",
+        lambda *a, **k: {
+            "workflow": "daily_radar",
+            "date": "2026-01-02",
+            "collected": 4,
+            "draft": "draft.md",
+        },
+    )
+
+    result = runner.invoke(cli.app, ["daily-radar", "--date", "2026-01-02", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["schema_version"] == 1
+    assert payload["command"] == "daily-radar"
+    assert payload["result"]["draft"] == "draft.md"
 
 
 def test_collect_command_can_force(monkeypatch):
@@ -331,6 +353,7 @@ def test_module_stage_commands_are_registered():
     assert "collect" in result.output
     assert "zack-ranking" in result.output
     assert "source-content" in result.output
+    assert "content-rerank" in result.output
     assert "zack-selection" in result.output
     assert "source-research" in result.output
     assert "zack-draft" in result.output
@@ -359,6 +382,27 @@ def test_doctor_command_prints_checks(monkeypatch):
     assert result.exit_code == 0
     assert "data_dir" in result.output
     assert "pass" in result.output
+
+
+def test_doctor_json_uses_standard_envelope(monkeypatch):
+    runner = CliRunner()
+    monkeypatch.setattr(
+        "ai_clip.cli.run_doctor",
+        lambda cfg: [DoctorCheck(name="data_dir", status="pass", detail="ok")],
+    )
+    result = runner.invoke(cli.app, ["doctor", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload == {
+        "schema_version": 1,
+        "command": "doctor",
+        "status": "succeeded",
+        "result": {
+            "checks": [{"name": "data_dir", "status": "pass", "detail": "ok", "hint": ""}],
+            "exit_code": 0,
+        },
+    }
 
 
 def test_radar_status_command_reads_run_artifacts(tmp_path):
@@ -401,6 +445,49 @@ def test_radar_status_command_reads_run_artifacts(tmp_path):
     assert "missing" in result.output
 
 
+def test_radar_status_json_includes_run_identity(tmp_path):
+    runner = CliRunner()
+    config = tmp_path / "config.yaml"
+    config.write_text(f"data_dir: {tmp_path.as_posix()}\n", encoding="utf-8")
+    run_dir = tmp_path / "radar" / "runs"
+    run_dir.mkdir(parents=True)
+    (run_dir / "2026-01-02.json").write_text(
+        json.dumps({
+            "workflow": "daily-radar",
+            "date": "2026-01-02",
+            "run_id": "run-2",
+            "attempt": 2,
+            "status": "succeeded",
+            "stages": [{"name": "collect", "status": "succeeded"}],
+        }),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        cli.app,
+        ["radar-status", "--date", "2026-01-02", "--config", str(config), "--json"],
+    )
+
+    assert result.exit_code == 0
+    envelope = json.loads(result.output)
+    assert envelope["schema_version"] == 1
+    assert envelope["command"] == "radar-status"
+    payload = envelope["result"]
+    assert payload["run_id"] == "run-2"
+    assert payload["attempt"] == 2
+    assert payload["stages"][0]["name"] == "collect"
+    assert {item["name"] for item in payload["artifact_freshness"]} == {
+        "candidates",
+        "shortlist",
+        "selection",
+        "source_research",
+        "zack_draft",
+        "pair_review",
+        "pair_rewrite",
+        "pair_verify",
+    }
+
+
 def test_project_status_handles_missing_storyboard(tmp_path):
     runner = CliRunner()
     config = tmp_path / "config.yaml"
@@ -427,7 +514,10 @@ def test_project_status_json_handles_missing_storyboard(tmp_path):
     )
 
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    envelope = json.loads(result.output)
+    assert envelope["schema_version"] == 1
+    assert envelope["command"] == "status"
+    payload = envelope["result"]
     assert payload["project"] == "demo"
     assert payload["storyboard"] == {
         "path": str(tmp_path / "demo" / "storyboard.json"),
@@ -436,6 +526,7 @@ def test_project_status_json_handles_missing_storyboard(tmp_path):
     }
     assert payload["missing_assets"] == []
     assert payload["assets_ready"] is None
+    assert payload["runs"] == []
     assert {item["name"]: item["status"] for item in payload["artifacts"]} == {
         "research": "missing",
         "storyboard": "missing",
@@ -476,6 +567,130 @@ def test_radar_repair_dry_run_and_apply(tmp_path):
     assert applied.exit_code == 0
     assert not snapshot.exists()
     assert not candidates.exists()
+
+
+def test_radar_feedback_records_explicit_decision(monkeypatch, tmp_path):
+    runner = CliRunner()
+    config = tmp_path / "config.yaml"
+    config.write_text(f"data_dir: {tmp_path.as_posix()}\n", encoding="utf-8")
+    seen = {}
+
+    class Event:
+        decision = "accept"
+        video_id = "youtube:1"
+
+    def fake_record(paths, decision, video_id="", reason=""):
+        seen.update({
+            "date": paths.date,
+            "decision": decision,
+            "video_id": video_id,
+            "reason": reason,
+        })
+        return Event()
+
+    monkeypatch.setattr("ai_clip.radar.feedback.record_feedback", fake_record)
+    result = runner.invoke(
+        cli.app,
+        [
+            "radar-feedback",
+            "accept",
+            "--date",
+            "2026-01-02",
+            "--video-id",
+            "youtube:1",
+            "--reason",
+            "good angle",
+            "--config",
+            str(config),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert seen == {
+        "date": "2026-01-02",
+        "decision": "accept",
+        "video_id": "youtube:1",
+        "reason": "good angle",
+    }
+
+
+def test_run_status_json_navigates_project_run_artifacts(tmp_path):
+    runner = CliRunner()
+    config = tmp_path / "config.yaml"
+    config.write_text(f"data_dir: {tmp_path.as_posix()}\n", encoding="utf-8")
+    output = tmp_path / "demo" / "source_draft.md"
+    output.parent.mkdir(parents=True)
+    output.write_text("draft", encoding="utf-8")
+    run_path = tmp_path / "demo" / "runs" / "source_draft.json"
+    run_path.parent.mkdir(parents=True)
+    run_path.write_text(
+        json.dumps({
+            "workflow": "source_draft",
+            "project": "demo",
+            "run_id": "run-1",
+            "attempt": 1,
+            "status": "succeeded",
+            "stages": [{
+                "name": "source-draft",
+                "status": "succeeded",
+                "outputs": {"draft": str(output)},
+            }],
+            "usage": {"total": {"calls": 1}},
+        }),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "run-status",
+            "--workflow",
+            "source-draft",
+            "--project",
+            "demo",
+            "--json",
+            "--config",
+            str(config),
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["command"] == "run-status"
+    assert payload["result"]["run_id"] == "run-1"
+    assert payload["result"]["artifacts"][0]["path"] == str(output)
+    assert payload["result"]["artifacts"][0]["exists"] is True
+
+
+def test_pair_review_json_reports_bounded_quality_chain(monkeypatch, tmp_path):
+    runner = CliRunner()
+    review = PairReviewReport(
+        artifact="source_draft",
+        source_path="source_draft.md",
+        status="needs_review",
+        reviewers=[ReviewerResult(role="logic", model="m1", ok=True, verdict="revise")],
+    )
+    verification = review.model_copy(update={
+        "kind": "verify",
+        "source_path": "source_draft.revised.md",
+        "status": "passed",
+    })
+    monkeypatch.setattr("ai_clip.cli.pipeline.run_pair_review", lambda *a, **k: review)
+    revised = tmp_path / "demo" / "source_draft.revised.md"
+    monkeypatch.setattr("ai_clip.cli.pipeline.run_pair_rewrite", lambda *a, **k: revised)
+    monkeypatch.setattr("ai_clip.cli.pipeline.run_pair_verify", lambda *a, **k: verification)
+
+    result = runner.invoke(
+        cli.app,
+        ["pair-review", "-p", "demo", "--artifact", "source_draft", "--rewrite", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["command"] == "pair-review"
+    assert payload["result"]["review_status"] == "needs_review"
+    assert payload["result"]["revised"] == str(revised)
+    assert payload["result"]["verification_status"] == "passed"
 
 
 

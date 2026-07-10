@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import datetime
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
@@ -80,19 +81,46 @@ def record_tts(provider: str, chars: int) -> None:
     })
 
 
-def summarize(project_dir: str | Path) -> dict:
+def record_search(provider: str, query: str, results: int) -> None:
+    _append({
+        "kind": "search",
+        "model": provider,
+        "query": query,
+        "results": results,
+        "cost": 0.0,
+    })
+
+
+def summarize(project_dir: str | Path, since: str | float | None = None) -> dict:
     """Read cost.jsonl and return totals grouped by stage and by model."""
     path = Path(project_dir) / "cost.jsonl"
     by_stage: dict[str, float] = {}
     by_model: dict[str, float] = {}
-    totals = {"cost": 0.0, "input_tokens": 0, "output_tokens": 0, "chars": 0, "calls": 0}
+    by_kind: dict[str, int] = {}
+    totals = {
+        "cost": 0.0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "chars": 0,
+        "calls": 0,
+        "searches": 0,
+    }
     if not path.exists():
-        return {"total": totals, "by_stage": by_stage, "by_model": by_model, "items": []}
+        return {
+            "total": totals,
+            "by_stage": by_stage,
+            "by_model": by_model,
+            "by_kind": by_kind,
+            "items": [],
+        }
+    since_ts = _since_timestamp(since)
     items = []
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
         it = json.loads(line)
+        if float(it.get("ts", 0.0)) < since_ts:
+            continue
         items.append(it)
         c = it.get("cost", 0.0)
         by_stage[it.get("stage", "")] = round(by_stage.get(it.get("stage", ""), 0.0) + c, 6)
@@ -102,4 +130,25 @@ def summarize(project_dir: str | Path) -> dict:
         totals["output_tokens"] += it.get("output_tokens", 0)
         totals["chars"] += it.get("chars", 0)
         totals["calls"] += 1
-    return {"total": totals, "by_stage": by_stage, "by_model": by_model, "items": items}
+        kind = str(it.get("kind") or "unknown")
+        by_kind[kind] = by_kind.get(kind, 0) + 1
+        if kind == "search":
+            totals["searches"] += 1
+    return {
+        "total": totals,
+        "by_stage": by_stage,
+        "by_model": by_model,
+        "by_kind": by_kind,
+        "items": items,
+    }
+
+
+def _since_timestamp(value: str | float | None) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return datetime.fromisoformat(value).timestamp()
+    except (TypeError, ValueError):
+        return 0.0

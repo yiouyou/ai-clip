@@ -36,6 +36,7 @@ def test_transcribe_order(monkeypatch, tmp_path):
     status = json.loads((tmp_path / "p" / "runs" / "transcribe.json").read_text(encoding="utf-8"))
     assert status["status"] == "succeeded"
     assert [stage["name"] for stage in status["stages"]] == ["download", "extract", "export"]
+    assert status["usage"]["total"]["calls"] == 0
 
 
 def test_teardown_order(monkeypatch, tmp_path):
@@ -65,7 +66,15 @@ def test_source_draft_workflow_runs_pipeline_stages(monkeypatch, tmp_path):
         calls.append(("analyze", project, intent))
         return ViralAnalysis(clip_id=project, intent=intent, hook="hook", formula="formula")
 
-    def fake_source_draft(cfg, project, intent=Intent.info, stance=""):
+    def fake_source_draft(
+        cfg,
+        project,
+        intent=Intent.info,
+        stance="",
+        use_research=True,
+        research_theme="",
+        allow_untracked_research=True,
+    ):
         calls.append(("source_draft", project, intent, stance))
         return "data/demo/source_draft.md"
 
@@ -112,7 +121,7 @@ def test_source_draft_can_run_research_before_draft(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(
         "ai_clip.workflows.pipeline.run_source_draft",
-        lambda c, p, intent=Intent.info, stance="": calls.append("source_draft")
+        lambda c, p, intent=Intent.info, stance="", **kwargs: calls.append("source_draft")
         or "source_draft.md",
     )
 
@@ -146,6 +155,37 @@ def test_source_draft_reuses_existing_artifacts_by_default(monkeypatch, tmp_path
     )
     (root / "research.md").write_text("research", encoding="utf-8")
     (root / "source_draft.md").write_text("draft", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "ai_clip.workflows.pipeline.load_current_download",
+        lambda *args, **kwargs: Clip(
+            clip_id="demo",
+            source_url="https://example.com/video",
+            platform=Platform.youtube,
+            video_path="v.mp4",
+        ),
+    )
+    monkeypatch.setattr(
+        "ai_clip.workflows.pipeline.load_current_extract",
+        lambda *args, **kwargs: Transcript(clip_id="demo", language="zh", text="text"),
+    )
+    monkeypatch.setattr(
+        "ai_clip.workflows.pipeline.load_current_analysis",
+        lambda *args, **kwargs: ViralAnalysis(
+            clip_id="demo",
+            intent=Intent.info,
+            hook="hook",
+            formula="formula",
+        ),
+    )
+    monkeypatch.setattr(
+        "ai_clip.workflows.pipeline.load_current_research",
+        lambda *args, **kwargs: root / "research.md",
+    )
+    monkeypatch.setattr(
+        "ai_clip.workflows.pipeline.load_current_source_draft",
+        lambda *args, **kwargs: root / "source_draft.md",
+    )
 
     for name in [
         "run_download",
@@ -195,7 +235,7 @@ def test_source_draft_no_resume_forces_stages(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(
         "ai_clip.workflows.pipeline.run_source_draft",
-        lambda c, p, intent=Intent.info, stance="": calls.append("source_draft")
+        lambda c, p, intent=Intent.info, stance="", **kwargs: calls.append("source_draft")
         or "source_draft.md",
     )
 
@@ -209,6 +249,85 @@ def test_source_draft_no_resume_forces_stages(monkeypatch, tmp_path):
     assert result["hook"] == "new"
     assert result["draft"] == "source_draft.md"
     assert calls == ["download", "extract", "analyze", "source_draft"]
+
+
+def test_source_draft_changed_url_reruns_every_downstream_stage(monkeypatch, tmp_path):
+    calls = []
+    root = tmp_path / "demo"
+    root.mkdir()
+    (root / "clip.json").write_text(
+        json.dumps({
+            "clip_id": "demo",
+            "source_url": "https://example.com/old",
+            "platform": "youtube",
+            "video_path": str(root / "old.mp4"),
+        }),
+        encoding="utf-8",
+    )
+    (root / "transcript.json").write_text(
+        '{"clip_id":"demo","language":"zh","text":"old","segments":[]}',
+        encoding="utf-8",
+    )
+    (root / "analysis.json").write_text(
+        '{"clip_id":"demo","intent":"info","hook":"old","formula":"old"}',
+        encoding="utf-8",
+    )
+    (root / "source_draft.md").write_text("old", encoding="utf-8")
+
+    monkeypatch.setattr(
+        workflows.pipeline,
+        "run_download",
+        lambda *args, **kwargs: calls.append("download") or Clip(
+            clip_id="demo",
+            source_url="https://example.com/new",
+            platform=Platform.youtube,
+            video_path=str(root / "new.mp4"),
+        ),
+    )
+    monkeypatch.setattr(
+        workflows.pipeline,
+        "run_extract",
+        lambda *args, **kwargs: calls.append("extract") or Transcript(clip_id="demo"),
+    )
+    monkeypatch.setattr(
+        workflows.pipeline,
+        "run_analyze",
+        lambda *args, **kwargs: calls.append("analyze") or ViralAnalysis(clip_id="demo"),
+    )
+    monkeypatch.setattr(
+        workflows.pipeline,
+        "run_source_draft",
+        lambda *args, **kwargs: calls.append("source_draft") or root / "source_draft.md",
+    )
+    monkeypatch.setattr(
+        workflows.pipeline,
+        "load_current_extract",
+        lambda *args, **kwargs: pytest.fail("extract reuse must not run after download reruns"),
+    )
+    monkeypatch.setattr(
+        workflows.pipeline,
+        "load_current_analysis",
+        lambda *args, **kwargs: pytest.fail("analysis reuse must not run after extract reruns"),
+    )
+
+    workflows.source_draft(
+        Config(data_dir=str(tmp_path)),
+        "demo",
+        "https://example.com/new",
+    )
+
+    assert calls == ["download", "extract", "analyze", "source_draft"]
+
+
+def test_source_draft_blocks_concurrent_project_run(tmp_path):
+    cfg = Config(data_dir=str(tmp_path))
+    lock_path = tmp_path / "demo" / "runs" / "locks" / "source_draft.lock"
+
+    from ai_clip.core.run_lock import RunLock
+
+    with RunLock(lock_path, "held"):
+        with pytest.raises(RuntimeError, match="source_draft is already running"):
+            workflows.source_draft(cfg, "demo", "https://example.com/video")
 
 
 def test_remix_full_auto(monkeypatch, tmp_path):

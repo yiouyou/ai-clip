@@ -45,10 +45,19 @@ uv run --extra download --extra extract ai-clip daily-radar --top 3 --channel-ti
 流程:
 
 ```text
-collect -> zack-ranking -> source-content -> zack-selection -> [source-research] -> zack-draft
+collect -> zack-ranking -> source-content -> content-rerank -> zack-selection
+        -> [source-research] -> zack-draft
 ```
 
-`source-research` 默认不自动跑；需要事实补充时:
+完整流程顺序和 optional 条件来自统一 `WorkflowSpec`。阶段实现保留在 `radar/stage.py`，完整
+编排在 `radar/workflow.py`，回顾性回填在 `radar/backfill.py`，超时采集在 `radar/collect.py`。
+
+`zack-ranking` 先按频道/平台基线归一化 metadata，默认保留 9 个 shortlist；`source-content`
+只为 shortlist 获取字幕或转写，`content-rerank` 再结合脚本深度、机制素材和 metadata 排名收敛
+到最终 Top 3。这样不会全量转写几十个频道，也不会在拿到脚本前过早淘汰内容更合适的选题。
+
+`source-research` 默认由选题的 `fact_risk` 自动决定：高风险且 Tavily 可用时最多搜索 2 次；
+手动 `--research` 会强制执行，仍可用 `--research-searches` 指定 1-3 次:
 
 ```bash
 ai-clip daily-radar --top 3 --research --research-searches 1
@@ -61,12 +70,15 @@ ai-clip daily-radar --top 3 --research --review
 ai-clip daily-radar --top 3 --research --rewrite
 ```
 
+`--rewrite` 固定执行一次 pair-review、一次 rewrite 和一次 verify，不会循环改写。
+
 ## 阶段命令
 
 ```bash
 ai-clip collect --workflow daily-radar --date 2026-07-08 --force-collect
 ai-clip zack-ranking --workflow daily-radar --date 2026-07-08 --top 3
 ai-clip source-content --workflow daily-radar --date 2026-07-08
+ai-clip content-rerank --workflow daily-radar --date 2026-07-08
 ai-clip zack-selection --workflow daily-radar --date 2026-07-08
 ai-clip source-research --workflow daily-radar --date 2026-07-08 --max-searches 2
 ai-clip zack-draft --workflow daily-radar --date 2026-07-08
@@ -77,23 +89,37 @@ ai-clip zack-draft --workflow daily-radar --date 2026-07-08
 ```bash
 ai-clip doctor
 ai-clip radar-status --date 2026-07-08
+ai-clip radar-status --date 2026-07-08 --json
+ai-clip run-status --workflow daily-radar --date 2026-07-08 --json
 ai-clip radar-repair --date 2026-07-08
 ai-clip radar-repair --date 2026-07-08 --apply
+ai-clip radar-feedback accept --date 2026-07-08 --reason "角度适合"
+ai-clip radar-feedback reject --date 2026-07-08 --video-id youtube:VIDEO_ID --reason "过于气象"
 ```
 
 `doctor` 默认只做本地检查，不触发付费 LLM/Tavily 调用。`radar-repair` 很保守，只清理明确
-无效的空 snapshot / candidates。
+无效的空 snapshot / shortlist / candidates。
 
 `radar-status` 还会显示关键 radar 产物的 freshness:
 
 ```text
+shortlist
 candidates
 selection
 source_research
 zack_draft
+pair_review
+pair_rewrite
+pair_verify
 ```
 
 状态含义与项目级 `status` 一致：`fresh`、`stale`、`missing`。
+`--json` 使用统一 envelope，并输出 `run_id`、attempt、阶段状态、频道诊断、产物 freshness
+以及本次 LLM/TTS/Tavily calls、tokens 和 cost。`run-status` 还会按阶段列出产物路径、manifest
+和历史运行目录。
+每次完整 `daily-radar` 重跑会把上一轮状态归档到
+`data/radar/runs/history/YYYY-MM-DD/<run_id>.json`；日期锁与项目 workflow 使用同一套安全
+PID 检测，不会在 Windows 上通过 `os.kill(pid, 0)` 探测进程。
 
 ## 产物
 
@@ -101,7 +127,9 @@ zack_draft
 data/radar/snapshots/YYYY-MM-DD.jsonl
 data/radar/collect-reports/YYYY-MM-DD.json
 data/radar/runs/YYYY-MM-DD.json
+data/radar/shortlists/YYYY-MM-DD.json
 data/radar/candidates/YYYY-MM-DD.json
+data/radar/feedback/events.jsonl
 data/radar/source-content/YYYY-MM-DD/
 data/radar/selections/YYYY-MM-DD.json
 data/radar/selections/YYYY-MM-DD.md
@@ -111,19 +139,18 @@ data/radar/briefs/YYYY-MM-DD.md
 data/radar/drafts/YYYY-MM-DD.md
 data/radar/drafts/YYYY-MM-DD.revised.md
 data/radar/reviews/YYYY-MM-DD_zack_draft_review.json
+data/radar/reviews/YYYY-MM-DD_zack_draft_verify.json
 ```
 
 关键产物会额外写 sidecar metadata:
 
 ```text
+data/radar/shortlists/YYYY-MM-DD.json.meta.json
 data/radar/candidates/YYYY-MM-DD.json.meta.json
 data/radar/selections/YYYY-MM-DD.json.meta.json
 data/radar/research/YYYY-MM-DD.md.meta.json
 data/radar/drafts/YYYY-MM-DD.md.meta.json
 ```
-
-旧版 `scout:` 配置、`AICLIP_SCOUT_*` 环境变量和 `data/scout/` 历史产物会作为兼容输入读取；
-新运行统一写入 `radar` 命名。
 
 ## 定时运行
 

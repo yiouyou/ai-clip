@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ai_clip import project_artifacts
 from ai_clip.analyze import analyze as analyze_stage
 from ai_clip.core import billing
 from ai_clip.core.config import Config
@@ -37,6 +38,23 @@ from ai_clip.extract.export import write_srt, write_txt
 from ai_clip.produce import assemble as assemble_stage
 from ai_clip.produce import generate_storyboard, write_storyboard_files
 from ai_clip.produce.voiceover import build_mimo, generate_voiceover
+from ai_clip.project_artifacts import (
+    PROMPT_VERSIONS,
+    analyze_params as _analyze_params,
+    current_research_path as _current_research_path,
+    download_params as _download_params,
+    existing_paths as _existing_paths,
+    extract_params as _extract_params,
+    research_params as _research_params,
+    source_draft_params as _source_draft_params,
+)
+
+_PROMPT_VERSIONS = PROMPT_VERSIONS
+load_current_download = project_artifacts.load_current_download
+load_current_extract = project_artifacts.load_current_extract
+load_current_analysis = project_artifacts.load_current_analysis
+load_current_research = project_artifacts.load_current_research
+load_current_source_draft = project_artifacts.load_current_source_draft
 
 
 def _paths(cfg: Config, project: str) -> ProjectPaths:
@@ -70,6 +88,11 @@ def run_download(cfg: Config, project: str, url: str) -> Clip:
     pp = _paths(cfg, project)
     clip = download_stage(url, pp.root, clip_id=project)
     write_model(pp.clip_json, clip)
+    write_artifact_manifest(
+        pp.clip_json,
+        stage="download",
+        params=_download_params(url),
+    )
     return clip
 
 
@@ -80,6 +103,13 @@ def run_extract(
     clip = read_model(pp.clip_json, Clip)
     transcript = extract_stage(clip, pp.root, cfg.whisper, use_subtitles=use_subtitles)
     write_model(pp.transcript_json, transcript)
+    write_artifact_manifest(
+        pp.transcript_json,
+        stage="extract",
+        inputs=[pp.clip_json],
+        params=_extract_params(cfg, use_subtitles),
+        model=f"faster-whisper/{cfg.whisper.model_size}",
+    )
     return transcript
 
 
@@ -100,6 +130,13 @@ def run_analyze(
     with billing.account(pp.root, "analyze"):
         analysis = analyze_stage(transcript, cfg.llm, intent)
     write_model(pp.analysis_json, analysis)
+    write_artifact_manifest(
+        pp.analysis_json,
+        stage="analyze",
+        inputs=[pp.transcript_json],
+        params=_analyze_params(intent),
+        model=cfg.llm.model,
+    )
     return analysis
 
 
@@ -119,10 +156,7 @@ def run_research(cfg: Config, project: str, theme: str = "") -> Path:
     write_model(pp.research_json, report)
     write_text_atomic(pp.research_md, report.markdown, encoding="utf-8")
     inputs = _existing_paths(pp.transcript_json, pp.analysis_json)
-    params = {
-        "theme": theme,
-        "max_searches": str(cfg.source_research.max_searches),
-    }
+    params = _research_params(cfg, theme)
     write_artifact_manifest(
         pp.research_json,
         stage="research",
@@ -150,6 +184,8 @@ def run_storyboard(
     product: ProductProfile | None = None,
     duration_sec: float = 30.0,
     n_shots: int = 6,
+    use_research: bool = True,
+    allow_untracked_research: bool = True,
 ) -> Storyboard:
     pp = _paths(cfg, project)
     analysis = (
@@ -162,7 +198,17 @@ def run_storyboard(
         if pp.transcript_json.exists()
         else None
     )
-    research_markdown = pp.research_md.read_text(encoding="utf-8") if pp.research_md.exists() else ""
+    research_path = (
+        _current_research_path(
+            pp,
+            cfg,
+            theme,
+            allow_untracked=allow_untracked_research,
+        )
+        if use_research
+        else None
+    )
+    research_markdown = research_path.read_text(encoding="utf-8") if research_path else ""
     with billing.account(pp.root, "storyboard"):
         sb = generate_storyboard(
             project=project,
@@ -188,6 +234,8 @@ def run_storyboard(
         "intent": intent.value,
         "duration_sec": str(duration_sec),
         "n_shots": str(n_shots),
+        "prompt_version": _PROMPT_VERSIONS["storyboard"],
+        "research_used": str(bool(research_path)),
     }
     write_artifact_manifest(
         pp.storyboard_json,
@@ -206,22 +254,31 @@ def run_storyboard(
     return sb
 
 
-def _existing_paths(*paths: Path) -> list[Path]:
-    return [path for path in paths if path.exists()]
-
-
 def run_source_draft(
     cfg: Config,
     project: str,
     intent: Intent = Intent.info,
     stance: str = "",
+    use_research: bool = True,
+    research_theme: str = "",
+    allow_untracked_research: bool = True,
 ) -> Path:
     from ai_clip.produce.source_draft import generate_source_draft
 
     pp = _paths(cfg, project)
     transcript = read_model(pp.transcript_json, Transcript)
     analysis = read_model(pp.analysis_json, ViralAnalysis) if pp.analysis_json.exists() else None
-    research_markdown = pp.research_md.read_text(encoding="utf-8") if pp.research_md.exists() else ""
+    research_path = (
+        _current_research_path(
+            pp,
+            cfg,
+            research_theme,
+            allow_untracked=allow_untracked_research,
+        )
+        if use_research
+        else None
+    )
+    research_markdown = research_path.read_text(encoding="utf-8") if research_path else ""
     with billing.account(pp.root, "source_draft"):
         markdown = generate_source_draft(
             transcript=transcript,
@@ -232,11 +289,8 @@ def run_source_draft(
             research_markdown=research_markdown,
         )
     write_text_atomic(pp.source_draft_md, markdown, encoding="utf-8")
-    inputs = _existing_paths(pp.transcript_json, pp.analysis_json, pp.research_md)
-    params = {
-        "intent": intent.value,
-        "stance": stance,
-    }
+    inputs = _existing_paths(pp.transcript_json, pp.analysis_json, *( [research_path] if research_path else [] ))
+    params = _source_draft_params(intent, stance, bool(research_path))
     write_artifact_manifest(
         pp.source_draft_md,
         stage="source_draft",
@@ -347,6 +401,17 @@ def run_pair_rewrite(
     )
 
 
+def run_pair_verify(
+    cfg: Config,
+    project: str,
+    artifact: str,
+    run_date: str | None = None,
+) -> PairReviewReport:
+    from ai_clip.pair.stage import verify_rewritten_artifact
+
+    return verify_rewritten_artifact(cfg, project, artifact, run_date=run_date)
+
+
 def run_collect(
     cfg: Config,
     date: str | None = None,
@@ -380,6 +445,17 @@ def run_source_content(
     from ai_clip.radar import run_source_content as source_content_stage
 
     return source_content_stage(cfg, date)
+
+
+def run_content_rerank(
+    cfg: Config,
+    date: str | None = None,
+    workflow: str = "daily-radar",
+) -> RadarCandidates:
+    _require_daily_radar(workflow)
+    from ai_clip.radar import run_content_rerank as content_rerank_stage
+
+    return content_rerank_stage(cfg, date)
 
 
 def run_zack_selection(

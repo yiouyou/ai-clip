@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import httpx
 
+from ai_clip.core import billing
 from ai_clip.core.config import SourceResearchConfig
 from ai_clip.source_research.models import SearchResult
 
@@ -41,4 +42,5 @@ def tavily_search(query: str, cfg: SourceResearchConfig) -> list[SearchResult]:
             content=str(item.get("content") or ""),
             score=float(item.get("score") or 0.0),
         ))
+    billing.record_search("tavily", query, len(results))
     return results

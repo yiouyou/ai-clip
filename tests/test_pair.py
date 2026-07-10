@@ -3,9 +3,17 @@ import json
 import pytest
 
 from ai_clip.core.config import Config
+from ai_clip.core.artifacts import artifact_manifest_path
+from ai_clip.artifact_catalog import resolve_review_artifact
 from ai_clip.pair.models import PairReviewReport, ReviewerResult
 from ai_clip.pair.client import configured_models
-from ai_clip.pair.stage import PairReviewError, review_artifact, rewrite_reviewed_artifact
+from ai_clip.pair.stage import (
+    PairReviewError,
+    pair_artifact_freshness,
+    review_artifact,
+    rewrite_reviewed_artifact,
+    verify_rewritten_artifact,
+)
 
 
 def _reply(verdict="pass"):
@@ -87,38 +95,11 @@ def test_pair_review_supports_zack_draft(monkeypatch, tmp_path):
     assert (tmp_path / "radar" / "reviews" / "2026-01-02_zack_draft_review.json").exists()
 
 
-def test_pair_review_accepts_legacy_radar_draft_alias(monkeypatch, tmp_path):
-    zack_draft = tmp_path / "radar" / "drafts" / "2026-01-02.md"
-    zack_draft.parent.mkdir(parents=True)
-    zack_draft.write_text("# zack draft", encoding="utf-8")
+@pytest.mark.parametrize("artifact", ["radar_draft", "scout_draft"])
+def test_pair_review_rejects_removed_legacy_aliases(tmp_path, artifact):
     cfg = Config(data_dir=str(tmp_path))
-    cfg.pair.base_url = "https://newapp.example/v1"
-    cfg.pair.api_key = "key"
-    cfg.pair.models = ["m1", "m2"]
-
-    monkeypatch.setattr("ai_clip.pair.stage.client.chat", lambda *a, **k: _reply())
-    report = review_artifact(cfg, "radar", "radar_draft", run_date="2026-01-02")
-
-    assert report.artifact == "zack_draft"
-    assert report.status == "passed"
-    assert (tmp_path / "radar" / "reviews" / "2026-01-02_zack_draft_review.json").exists()
-
-
-def test_pair_review_accepts_legacy_scout_draft_alias(monkeypatch, tmp_path):
-    legacy_draft = tmp_path / "scout" / "drafts" / "2026-01-02.md"
-    legacy_draft.parent.mkdir(parents=True)
-    legacy_draft.write_text("# legacy draft", encoding="utf-8")
-    cfg = Config(data_dir=str(tmp_path))
-    cfg.pair.base_url = "https://newapp.example/v1"
-    cfg.pair.api_key = "key"
-    cfg.pair.models = ["m1", "m2"]
-
-    monkeypatch.setattr("ai_clip.pair.stage.client.chat", lambda *a, **k: _reply())
-    report = review_artifact(cfg, "radar", "scout_draft", run_date="2026-01-02")
-
-    assert report.artifact == "zack_draft"
-    assert report.status == "passed"
-    assert (tmp_path / "radar" / "reviews" / "2026-01-02_zack_draft_review.json").exists()
+    with pytest.raises(PairReviewError, match="unknown artifact"):
+        review_artifact(cfg, "radar", artifact, run_date="2026-01-02")
 
 
 def test_pair_rewrite_writes_revised_source_draft(monkeypatch, tmp_path):
@@ -242,6 +223,46 @@ def test_pair_review_requires_two_distinct_models(tmp_path):
     cfg.pair.deepseek_models = []
     with pytest.raises(PairReviewError, match="two distinct"):
         review_artifact(cfg, project, "storyboard")
+
+
+def test_pair_review_rewrite_verify_freshness_chain(monkeypatch, tmp_path):
+    project = "demo"
+    root = tmp_path / project
+    root.mkdir()
+    source = root / "source_draft.md"
+    source.write_text("# draft", encoding="utf-8")
+    cfg = Config(data_dir=str(tmp_path))
+    cfg.llm.model = "producer"
+    cfg.pair.base_url = "https://newapp.example/v1"
+    cfg.pair.api_key = "key"
+    cfg.pair.models = ["logic", "style"]
+    monkeypatch.setattr("ai_clip.pair.stage.client.chat", lambda *a, **k: _reply("revise"))
+
+    report = review_artifact(cfg, project, "source_draft")
+    monkeypatch.setattr("ai_clip.pair.stage.llm_mod.chat", lambda *a, **k: "# revised")
+    revised = rewrite_reviewed_artifact(cfg, project, "source_draft", report)
+    monkeypatch.setattr("ai_clip.pair.stage.client.chat", lambda *a, **k: _reply("pass"))
+    verification = verify_rewritten_artifact(cfg, project, "source_draft")
+    target = resolve_review_artifact(cfg, project, "source_draft")
+
+    assert verification.kind == "verify"
+    assert verification.source_path == str(revised)
+    assert artifact_manifest_path(target.review).exists()
+    assert artifact_manifest_path(revised).exists()
+    assert target.verification is not None
+    assert artifact_manifest_path(target.verification).exists()
+    assert pair_artifact_freshness(cfg, target) == {
+        "review": True,
+        "rewrite": True,
+        "verify": True,
+    }
+
+    source.write_text("# changed", encoding="utf-8")
+    assert pair_artifact_freshness(cfg, target) == {
+        "review": False,
+        "rewrite": False,
+        "verify": False,
+    }
 
 
 

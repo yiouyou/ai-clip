@@ -1,36 +1,30 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-import json
-import re
 from pathlib import Path
+import re
 
 from ai_clip.core.config import WhisperConfig
-from ai_clip.core.ffmpeg import FFmpegError
-from ai_clip.core.models import TranscriptSegment
-from ai_clip.extract.extractor import transcribe_audio
-from ai_clip.extract.subtitles import parse_vtt
+from ai_clip.extract.remote import (
+    VideoScript,
+    VideoScriptResult,
+    download_video_audio,
+    fetch_video_script,
+    fetch_video_script_report,
+    fetch_video_subtitles,
+    transcribe_video_audio,
+)
 from ai_clip.radar.models import ChannelSpec, RadarVideo
-from ai_clip.radar.storage import write_text_atomic
 
-_PREFERRED_LANGS = ["zh", "zh-Hans", "zh-CN", "zh-Hant", "en", "en-US", "en-GB"]
-
-
-@dataclass(frozen=True)
-class VideoScript:
-    text: str
-    language: str
-    segments: list[TranscriptSegment]
-    source: str
-
-
-@dataclass(frozen=True)
-class VideoScriptResult:
-    script: VideoScript | None
-    status: str
-    error: str = ""
-    attempts: tuple[str, ...] = ()
-    cache_path: str = ""
+__all__ = [
+    "VideoScript",
+    "VideoScriptResult",
+    "add_source_content",
+    "download_video_audio",
+    "fetch_video_script",
+    "fetch_video_script_report",
+    "fetch_video_subtitles",
+    "transcribe_video_audio",
+]
 
 
 def add_source_content(
@@ -44,11 +38,10 @@ def add_source_content(
     cookies_by_channel = {channel.url: channel.cookies for channel in channels if channel.cookies}
     enriched = []
     for video in videos:
-        cookiefile = cookies_by_channel.get(video.channel_url, "")
         result = fetch_video_script_report(
             video.url,
             out_dir / _safe_name(video.video_id),
-            cookiefile,
+            cookies_by_channel.get(video.channel_url, ""),
             whisper=whisper,
             transcribe_missing=transcribe_missing,
         )
@@ -58,253 +51,16 @@ def add_source_content(
             "content_cache_path": result.cache_path,
             "content_attempts": list(result.attempts),
         }
-        if result.script is None:
-            enriched.append(video.model_copy(update=update))
-            continue
-        enriched.append(video.model_copy(update={
-            **update,
-            "transcript_text": result.script.text,
-            "transcript_language": result.script.language,
-            "transcript_source": result.script.source,
-            "transcript_segments": result.script.segments,
-        }))
+        if result.script is not None:
+            update.update({
+                "transcript_text": result.script.text,
+                "transcript_language": result.script.language,
+                "transcript_source": result.script.source,
+                "transcript_segments": result.script.segments,
+            })
+        enriched.append(video.model_copy(update=update))
     return enriched
-
-
-def fetch_video_script(
-    url: str,
-    out_dir: Path,
-    cookiefile: str = "",
-    whisper: WhisperConfig | None = None,
-    transcribe_missing: bool = True,
-) -> VideoScript | None:
-    return fetch_video_script_report(
-        url,
-        out_dir,
-        cookiefile,
-        whisper=whisper,
-        transcribe_missing=transcribe_missing,
-    ).script
-
-
-def fetch_video_script_report(
-    url: str,
-    out_dir: Path,
-    cookiefile: str = "",
-    whisper: WhisperConfig | None = None,
-    transcribe_missing: bool = True,
-) -> VideoScriptResult:
-    out_dir.mkdir(parents=True, exist_ok=True)
-    cached = read_cached_script(out_dir)
-    if cached is not None:
-        return VideoScriptResult(
-            script=cached,
-            status="cached",
-            attempts=("cache",),
-            cache_path=str(_script_cache_path(out_dir)),
-        )
-
-    attempts: list[str] = []
-    result = fetch_video_subtitles(url, out_dir, cookiefile)
-    attempts.append("subtitles")
-    if result is not None:
-        write_cached_script(out_dir, result)
-        return VideoScriptResult(
-            script=result,
-            status="available",
-            attempts=tuple(attempts),
-            cache_path=str(_script_cache_path(out_dir)),
-        )
-    if not transcribe_missing or whisper is None:
-        error = "subtitles unavailable; transcription disabled"
-        write_content_status(out_dir, "missing", error, attempts)
-        return VideoScriptResult(
-            script=None,
-            status="missing",
-            error=error,
-            attempts=tuple(attempts),
-        )
-
-    attempts.append("whisper")
-    result = transcribe_video_audio(url, out_dir, whisper, cookiefile)
-    if result is None:
-        error = "subtitles and audio transcription unavailable"
-        write_content_status(out_dir, "missing", error, attempts)
-        return VideoScriptResult(
-            script=None,
-            status="missing",
-            error=error,
-            attempts=tuple(attempts),
-        )
-    write_cached_script(out_dir, result)
-    return VideoScriptResult(
-        script=result,
-        status="available",
-        attempts=tuple(attempts),
-        cache_path=str(_script_cache_path(out_dir)),
-    )
-
-
-def fetch_video_subtitles(url: str, out_dir: Path, cookiefile: str = "") -> VideoScript | None:
-    import yt_dlp  # noqa: PLC0415
-
-    out_dir.mkdir(parents=True, exist_ok=True)
-    opts = {
-        "skip_download": True,
-        "writesubtitles": True,
-        "writeautomaticsub": True,
-        "subtitleslangs": _PREFERRED_LANGS,
-        "subtitlesformat": "vtt",
-        "outtmpl": str(out_dir / "subs.%(ext)s"),
-        "quiet": True,
-        "no_warnings": True,
-        "noprogress": True,
-    }
-    if cookiefile:
-        opts["cookiefile"] = cookiefile
-    try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            ydl.extract_info(url, download=True)
-    except yt_dlp.utils.DownloadError:
-        return None
-
-    for lang in _PREFERRED_LANGS:
-        for candidate in out_dir.glob(f"subs.{lang}.vtt"):
-            segments = parse_vtt(candidate.read_text(encoding="utf-8", errors="replace"))
-            if segments:
-                return VideoScript(
-                    text=" ".join(s.text for s in segments).strip(),
-                    language=lang,
-                    segments=segments,
-                    source="subtitles",
-                )
-    for candidate in sorted(out_dir.glob("subs.*.vtt")):
-        segments = parse_vtt(candidate.read_text(encoding="utf-8", errors="replace"))
-        if segments:
-            parts = candidate.name.split(".")
-            lang = parts[1] if len(parts) > 2 else ""
-            return VideoScript(
-                text=" ".join(s.text for s in segments).strip(),
-                language=lang,
-                segments=segments,
-                source="subtitles",
-            )
-    return None
-
-
-def transcribe_video_audio(
-    url: str,
-    out_dir: Path,
-    whisper: WhisperConfig,
-    cookiefile: str = "",
-) -> VideoScript | None:
-    audio_path = download_video_audio(url, out_dir, cookiefile)
-    if audio_path is None:
-        return None
-    try:
-        segments, language, text = transcribe_audio(audio_path, whisper)
-    except (RuntimeError, FFmpegError):
-        return None
-    if not text:
-        return None
-    return VideoScript(text=text, language=language, segments=segments, source="whisper")
-
-
-def download_video_audio(url: str, out_dir: Path, cookiefile: str = "") -> Path | None:
-    import yt_dlp  # noqa: PLC0415
-
-    out_dir.mkdir(parents=True, exist_ok=True)
-    opts = {
-        "format": "bestaudio/best",
-        "outtmpl": str(out_dir / "audio.%(ext)s"),
-        "quiet": True,
-        "no_warnings": True,
-        "noprogress": True,
-        "noplaylist": True,
-    }
-    if cookiefile:
-        opts["cookiefile"] = cookiefile
-    try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            prepared = Path(ydl.prepare_filename(info)) if info else None
-    except yt_dlp.utils.DownloadError:
-        return None
-    if prepared and prepared.exists():
-        return prepared
-    candidates = [
-        path for path in out_dir.glob("audio.*")
-        if not path.name.endswith((".part", ".ytdl", ".tmp"))
-    ]
-    return sorted(candidates)[0] if candidates else None
 
 
 def _safe_name(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", value)
-
-
-def _script_cache_path(out_dir: Path) -> Path:
-    return out_dir / "script.json"
-
-
-def _content_status_path(out_dir: Path) -> Path:
-    return out_dir / "status.json"
-
-
-def read_cached_script(out_dir: Path) -> VideoScript | None:
-    path = _script_cache_path(out_dir)
-    if not path.exists():
-        return None
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return None
-    text = str(data.get("text") or "")
-    if not text.strip():
-        return None
-    segments = [
-        TranscriptSegment.model_validate(item)
-        for item in data.get("segments", [])
-        if isinstance(item, dict)
-    ]
-    return VideoScript(
-        text=text,
-        language=str(data.get("language") or ""),
-        source=str(data.get("source") or "cache"),
-        segments=segments,
-    )
-
-
-def write_cached_script(out_dir: Path, script: VideoScript) -> None:
-    out_dir.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "text": script.text,
-        "language": script.language,
-        "source": script.source,
-        "segments": [segment.model_dump(mode="json") for segment in script.segments],
-    }
-    write_text_atomic(
-        _script_cache_path(out_dir),
-        json.dumps(payload, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    write_content_status(out_dir, "available", "", [script.source])
-
-
-def write_content_status(
-    out_dir: Path,
-    status: str,
-    error: str,
-    attempts: list[str],
-) -> None:
-    out_dir.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "status": status,
-        "error": error,
-        "attempts": attempts,
-    }
-    write_text_atomic(
-        _content_status_path(out_dir),
-        json.dumps(payload, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )

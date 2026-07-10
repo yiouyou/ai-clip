@@ -23,16 +23,16 @@ class RadarPaths:
         return ArtifactStore(self.root)
 
     @property
-    def legacy_root(self) -> Path:
-        return self.data_dir / "scout"
-
-    @property
     def snapshots_dir(self) -> Path:
         return self.root / "snapshots"
 
     @property
     def candidates_dir(self) -> Path:
         return self.root / "candidates"
+
+    @property
+    def shortlists_dir(self) -> Path:
+        return self.root / "shortlists"
 
     @property
     def briefs_dir(self) -> Path:
@@ -53,6 +53,10 @@ class RadarPaths:
     @property
     def reviews_dir(self) -> Path:
         return self.root / "reviews"
+
+    @property
+    def feedback_dir(self) -> Path:
+        return self.root / "feedback"
 
     @property
     def source_content_dir(self) -> Path:
@@ -78,16 +82,16 @@ class RadarPaths:
         return self.snapshots_dir / f"{self.date}.jsonl"
 
     @property
-    def legacy_snapshot_jsonl(self) -> Path:
-        return self.legacy_root / "snapshots" / f"{self.date}.jsonl"
-
-    @property
     def candidates_json(self) -> Path:
         return self.candidates_dir / f"{self.date}.json"
 
     @property
-    def legacy_candidates_json(self) -> Path:
-        return self.legacy_root / "candidates" / f"{self.date}.json"
+    def shortlist_json(self) -> Path:
+        return self.shortlists_dir / f"{self.date}.json"
+
+    @property
+    def feedback_events_jsonl(self) -> Path:
+        return self.feedback_dir / "events.jsonl"
 
     @property
     def brief_md(self) -> Path:
@@ -114,16 +118,8 @@ class RadarPaths:
         return self.drafts_dir / f"{self.date}.md"
 
     @property
-    def legacy_draft_md(self) -> Path:
-        return self.legacy_root / "drafts" / f"{self.date}.md"
-
-    @property
     def draft_revised_md(self) -> Path:
         return self.drafts_dir / f"{self.date}.revised.md"
-
-    @property
-    def legacy_draft_revised_md(self) -> Path:
-        return self.legacy_root / "drafts" / f"{self.date}.revised.md"
 
     @property
     def run_status_json(self) -> Path:
@@ -133,30 +129,17 @@ class RadarPaths:
     def collect_report_json(self) -> Path:
         return self.collect_reports_dir / f"{self.date}.json"
 
-    def existing_snapshot_jsonl(self) -> Path:
-        if self.snapshot_jsonl.exists() or not self.legacy_snapshot_jsonl.exists():
-            return self.snapshot_jsonl
-        return self.legacy_snapshot_jsonl
-
-    def existing_candidates_json(self) -> Path:
-        if self.candidates_json.exists() or not self.legacy_candidates_json.exists():
-            return self.candidates_json
-        return self.legacy_candidates_json
-
-    def existing_draft_md(self) -> Path:
-        if self.draft_md.exists() or not self.legacy_draft_md.exists():
-            return self.draft_md
-        return self.legacy_draft_md
-
     def ensure(self) -> None:
         for path in (
             self.snapshots_dir,
             self.candidates_dir,
+            self.shortlists_dir,
             self.briefs_dir,
             self.selections_dir,
             self.research_dir,
             self.drafts_dir,
             self.reviews_dir,
+            self.feedback_dir,
             self.source_content_dir,
             self.backfills_dir,
             self.collect_reports_dir,
@@ -198,13 +181,9 @@ def dedupe_snapshots(snapshots: list[RadarSnapshot]) -> list[RadarSnapshot]:
     return list(by_video_id.values())
 
 
-def latest_previous_by_video(root: Path, before_date: str, legacy_root: Path | None = None) -> dict[str, RadarVideo]:
-    roots = [root]
-    if legacy_root is not None and legacy_root != root:
-        roots.append(legacy_root)
+def latest_previous_by_video(root: Path, before_date: str) -> dict[str, RadarVideo]:
     latest: dict[str, tuple[datetime, RadarVideo]] = {}
-    for current_root in roots:
-        latest.update(_latest_previous_by_video(current_root, before_date, latest))
+    latest.update(_latest_previous_by_video(root, before_date, latest))
     return {video_id: item[1] for video_id, item in latest.items()}
 
 

@@ -13,18 +13,26 @@ from ai_clip.radar.collect import (
     entry_to_video,
     load_channels,
 )
-from ai_clip.radar.models import ChannelSpec, RadarCollectReport, RadarSnapshot, RadarVideo
+from ai_clip.radar.feedback import apply_feedback_events, read_feedback_events, record_feedback
+from ai_clip.radar.models import (
+    ChannelSpec,
+    RadarCandidates,
+    RadarCollectReport,
+    RadarSnapshot,
+    RadarVideo,
+)
+from ai_clip.radar.research_policy import automatic_research_searches
 from ai_clip.source_content import add_source_content
-from ai_clip.zack_ranking import rank_videos, score_video
+from ai_clip.zack_ranking import RankingFeedback, rank_videos, rerank_by_content, score_video
 from ai_clip.radar.stage import (
-    run_all,
-    run_backfill,
     run_collect,
     run_source_research,
     run_zack_ranking,
     run_zack_draft,
     run_zack_selection,
 )
+from ai_clip.radar.backfill import run_backfill
+from ai_clip.radar.workflow import run_all
 from ai_clip.radar.models import RadarRunResult, ZackSelection
 from ai_clip.radar.artifact_status import radar_artifact_statuses
 from ai_clip.radar.storage import RadarPaths
@@ -207,6 +215,113 @@ def test_rank_videos_prefers_pool_diversity_before_filling():
     assert {video.pool for video in out} == {"ai", "society"}
 
 
+def test_rank_videos_records_channel_and_platform_normalization():
+    def snapshot(video_id: str, channel: str, views: int) -> RadarSnapshot:
+        return RadarSnapshot(
+            collected_at="2026-01-01T00:00:00+00:00",
+            video=RadarVideo(
+                video_id=video_id,
+                url=video_id,
+                platform=Platform.youtube,
+                channel_url=channel,
+                view_count=views,
+                age_days=1,
+            ),
+        )
+
+    ranked = rank_videos(
+        [
+            snapshot("large:baseline", "large", 1_000_000),
+            snapshot("large:new", "large", 1_100_000),
+            snapshot("small:baseline", "small", 1_000),
+            snapshot("small:breakout", "small", 100_000),
+        ],
+        previous={},
+        top_n=4,
+    )
+    by_id = {video.video_id: video for video in ranked}
+
+    assert by_id["small:breakout"].score_components["channel_reach_ratio"] > 1
+    assert by_id["large:new"].score_components["channel_reach_ratio"] < 2
+    assert "platform_velocity_ratio" in by_id["small:breakout"].score_components
+
+
+def test_content_rerank_can_promote_a_deep_mechanism_source():
+    videos = [
+        RadarVideo(
+            video_id=f"v{i}",
+            url=f"u{i}",
+            platform=Platform.youtube,
+            pool=f"pool{i}",
+            score=float(100 - i * 10),
+            lens_fit=1.0,
+        )
+        for i in range(4)
+    ]
+    videos[-1] = videos[-1].model_copy(update={
+        "transcript_text": "反馈循环 复杂系统 演化 生态 激励 机制 网络 涌现 " * 500,
+        "lens_fit": 1.5,
+    })
+
+    reranked = rerank_by_content(videos, top_n=3)
+
+    assert "v3" in {video.video_id for video in reranked}
+    promoted = next(video for video in reranked if video.video_id == "v3")
+    assert promoted.score_components["content_fit"] == 1.0
+
+
+def test_feedback_events_are_upserted_and_calibrated(tmp_path: Path):
+    paths = RadarPaths(tmp_path, "2026-01-02")
+    paths.ensure()
+    video = RadarVideo(
+        video_id="youtube:1",
+        url="u",
+        platform=Platform.youtube,
+        pool="ai",
+        tags=["systems"],
+    )
+    paths.candidates_json.write_text(
+        RadarCandidates(date=paths.date, top_n=3, videos=[video]).model_dump_json(),
+        encoding="utf-8",
+    )
+    paths.selection_json.write_text(
+        ZackSelection(
+            date=paths.date,
+            selected_video_id=video.video_id,
+            selected_video=video,
+            topic="topic",
+        ).model_dump_json(),
+        encoding="utf-8",
+    )
+
+    record_feedback(paths, "reject", reason="too generic")
+    record_feedback(paths, "accept", reason="useful angle")
+    events = read_feedback_events(paths.feedback_events_jsonl)
+    calibrated = apply_feedback_events(RankingFeedback(), events)
+
+    assert len(events) == 1
+    assert events[0].decision == "accept"
+    assert calibrated.learned_pool_multipliers["ai"] > 1.0
+    assert calibrated.learned_tag_multipliers["systems"] > 1.0
+
+
+def test_automatic_research_is_bounded_by_fact_risk():
+    cfg = Config()
+    cfg.source_research.tavily_api_key = "key"
+    video = RadarVideo(video_id="v", url="u", platform=Platform.youtube)
+    selection = ZackSelection(
+        date="2026-01-02",
+        selected_video_id="v",
+        selected_video=video,
+        fact_risk="high",
+    )
+
+    assert automatic_research_searches(selection, cfg) == 2
+    assert automatic_research_searches(selection.model_copy(update={"fact_risk": "low"}), cfg) == 0
+    cfg.source_research.tavily_api_key = ""
+    assert automatic_research_searches(selection, cfg) == 0
+
+
 def test_collect_channels_with_cookies(monkeypatch):
     seen_opts = []
 
@@ -357,7 +472,12 @@ channels:
     cfg.radar.channel_timeout_sec = 0
     result = run_all(cfg, date="2026-01-01", top_n=3)
     assert result.collected == 1
+    assert (tmp_path / "radar" / "shortlists" / "2026-01-01.json").exists()
     assert Path(result.candidates_path).exists()
+    final_candidates = RadarCandidates.model_validate_json(
+        Path(result.candidates_path).read_text(encoding="utf-8")
+    )
+    assert final_candidates.ranking_phase == "content-reranked"
     assert Path(result.selection_path).exists()
     assert Path(result.brief_path).exists()
     assert Path(result.draft_path).read_text(encoding="utf-8") == "# draft"
@@ -368,6 +488,7 @@ channels:
         "collect",
         "zack-ranking",
         "source-content",
+        "content-rerank",
         "zack-selection",
         "zack-draft",
     ]
@@ -392,7 +513,10 @@ def test_collect_reuses_existing_snapshots(monkeypatch, tmp_path: Path):
         called = True
         return []
 
-    monkeypatch.setattr("ai_clip.radar.stage.collect_channels", fake_collect)
+    monkeypatch.setattr(
+        "ai_clip.radar.stage.collect_channels_with_diagnostics",
+        fake_collect,
+    )
     cfg = Config(data_dir=str(tmp_path))
     cfg.radar.channel_timeout_sec = 0
 
@@ -476,7 +600,7 @@ def test_zack_ranking_dedupes_repeated_snapshots(tmp_path: Path):
 
     assert len(candidates.videos) == 1
     assert candidates.videos[0].view_count == 1000
-    manifest = read_artifact_manifest(tmp_path / "radar" / "candidates" / "2026-01-02.json")
+    manifest = read_artifact_manifest(tmp_path / "radar" / "shortlists" / "2026-01-02.json")
     assert manifest.stage == "zack-ranking"
     assert manifest.params["top_n"] == "3"
 
@@ -552,6 +676,7 @@ def test_daily_radar_workflow_wraps_radar_pipeline(monkeypatch):
         "run_status": "run.json",
         "review": "review.json",
         "revised_draft": "draft.revised.md",
+        "verification": "",
     }
 
 
@@ -561,6 +686,7 @@ def test_run_all_can_pair_review_and_rewrite(monkeypatch, tmp_path: Path):
     monkeypatch.setattr("ai_clip.radar.stage.run_collect", lambda *a, **k: 1)
     monkeypatch.setattr("ai_clip.radar.stage.run_zack_ranking", lambda *a, **k: None)
     monkeypatch.setattr("ai_clip.radar.stage.run_source_content", lambda *a, **k: None)
+    monkeypatch.setattr("ai_clip.radar.stage.run_content_rerank", lambda *a, **k: None)
     monkeypatch.setattr("ai_clip.radar.stage.run_zack_selection", lambda *a, **k: None)
     monkeypatch.setattr("ai_clip.radar.stage.run_zack_draft", lambda *a, **k: None)
 
@@ -581,8 +707,19 @@ def test_run_all_can_pair_review_and_rewrite(monkeypatch, tmp_path: Path):
         out.write_text("# revised", encoding="utf-8")
         return out
 
+    def fake_verify(cfg, project, artifact, run_date=None):
+        calls.append(("verify", project, artifact, run_date))
+        return PairReviewReport(
+            artifact=artifact,
+            source_path="draft.revised.md",
+            kind="verify",
+            status="passed",
+            reviewers=[],
+        )
+
     monkeypatch.setattr("ai_clip.pair.stage.review_artifact", fake_review)
     monkeypatch.setattr("ai_clip.pair.stage.rewrite_reviewed_artifact", fake_rewrite)
+    monkeypatch.setattr("ai_clip.pair.stage.verify_rewritten_artifact", fake_verify)
 
     result = run_all(
         Config(data_dir=str(tmp_path)),
@@ -594,9 +731,11 @@ def test_run_all_can_pair_review_and_rewrite(monkeypatch, tmp_path: Path):
     assert calls == [
         ("review", "radar", "zack_draft", "2026-01-02"),
         ("rewrite", "radar", "zack_draft", "2026-01-02"),
+        ("verify", "radar", "zack_draft", "2026-01-02"),
     ]
     assert result.review_path.endswith("2026-01-02_zack_draft_review.json")
     assert result.revised_draft_path.endswith("2026-01-02.revised.md")
+    assert result.verification_path.endswith("2026-01-02_zack_draft_verify.json")
 
 
 def test_run_all_skips_pair_rewrite_when_review_blocked(monkeypatch, tmp_path: Path):
@@ -605,6 +744,7 @@ def test_run_all_skips_pair_rewrite_when_review_blocked(monkeypatch, tmp_path: P
     monkeypatch.setattr("ai_clip.radar.stage.run_collect", lambda *a, **k: 1)
     monkeypatch.setattr("ai_clip.radar.stage.run_zack_ranking", lambda *a, **k: None)
     monkeypatch.setattr("ai_clip.radar.stage.run_source_content", lambda *a, **k: None)
+    monkeypatch.setattr("ai_clip.radar.stage.run_content_rerank", lambda *a, **k: None)
     monkeypatch.setattr("ai_clip.radar.stage.run_zack_selection", lambda *a, **k: None)
     monkeypatch.setattr("ai_clip.radar.stage.run_zack_draft", lambda *a, **k: None)
 
@@ -640,6 +780,34 @@ def test_run_all_skips_pair_rewrite_when_review_blocked(monkeypatch, tmp_path: P
     rewrite_stage = next(stage for stage in status["stages"] if stage["name"] == "pair-rewrite")
     assert rewrite_stage["status"] == "skipped"
     assert rewrite_stage["metrics"]["reason"] == "pair-review blocked"
+
+
+def test_run_all_auto_researches_high_risk_selection(monkeypatch, tmp_path: Path):
+    calls = []
+    video = RadarVideo(video_id="v", url="u", platform=Platform.youtube)
+    selection = ZackSelection(
+        date="2026-01-02",
+        selected_video_id=video.video_id,
+        selected_video=video,
+        fact_risk="high",
+    )
+    monkeypatch.setattr("ai_clip.radar.stage.run_collect", lambda *a, **k: 1)
+    monkeypatch.setattr("ai_clip.radar.stage.run_zack_ranking", lambda *a, **k: None)
+    monkeypatch.setattr("ai_clip.radar.stage.run_source_content", lambda *a, **k: None)
+    monkeypatch.setattr("ai_clip.radar.stage.run_content_rerank", lambda *a, **k: None)
+    monkeypatch.setattr("ai_clip.radar.stage.run_zack_selection", lambda *a, **k: selection)
+    monkeypatch.setattr(
+        "ai_clip.radar.stage.run_source_research",
+        lambda cfg, date: calls.append(("research", cfg.source_research.max_searches)),
+    )
+    monkeypatch.setattr("ai_clip.radar.stage.run_zack_draft", lambda *a, **k: None)
+    cfg = Config(data_dir=str(tmp_path))
+    cfg.source_research.tavily_api_key = "key"
+    cfg.source_research.max_searches = 3
+
+    run_all(cfg, date="2026-01-02")
+
+    assert calls == [("research", 2)]
 
 
 def test_run_all_rejects_active_lock(tmp_path: Path):
@@ -793,7 +961,8 @@ def test_zack_draft_injects_existing_source_research(monkeypatch, tmp_path: Path
     )
     research_dir = tmp_path / "radar" / "research"
     research_dir.mkdir(parents=True)
-    (research_dir / "2026-01-02.md").write_text("confirmed detail", encoding="utf-8")
+    research_path = research_dir / "2026-01-02.md"
+    research_path.write_text("confirmed detail", encoding="utf-8")
     selection_dir = tmp_path / "radar" / "selections"
     selection_dir.mkdir(parents=True)
     selected = RadarVideo(
@@ -802,7 +971,8 @@ def test_zack_draft_injects_existing_source_research(monkeypatch, tmp_path: Path
         platform=Platform.youtube,
         title="事件标题",
     )
-    (selection_dir / "2026-01-02.json").write_text(
+    selection_path = selection_dir / "2026-01-02.json"
+    selection_path.write_text(
         ZackSelection(
             date="2026-01-02",
             selected_video_id=selected.video_id,
@@ -813,6 +983,13 @@ def test_zack_draft_injects_existing_source_research(monkeypatch, tmp_path: Path
         encoding="utf-8",
     )
     cfg = Config(data_dir=str(tmp_path))
+    write_artifact_manifest(
+        research_path,
+        stage="source-research",
+        inputs=[selection_path],
+        params={"max_searches": "2"},
+        model=cfg.llm.model,
+    )
     seen = {}
 
     def fake_generate(candidates, llm_cfg, selection=None, research_markdown=""):
@@ -853,7 +1030,8 @@ def test_zack_draft_ignores_stale_source_research(monkeypatch, tmp_path: Path):
     )
     research_dir = tmp_path / "radar" / "research"
     research_dir.mkdir(parents=True)
-    (research_dir / "2026-01-02.md").write_text("stale detail", encoding="utf-8")
+    research_path = research_dir / "2026-01-02.md"
+    research_path.write_text("stale detail", encoding="utf-8")
     selection_dir = tmp_path / "radar" / "selections"
     selection_dir.mkdir(parents=True)
     selected = RadarVideo(
@@ -862,25 +1040,25 @@ def test_zack_draft_ignores_stale_source_research(monkeypatch, tmp_path: Path):
         platform=Platform.youtube,
         title="事件标题",
     )
-    (selection_dir / "2026-01-02.json").write_text(
-        ZackSelection(
-            date="2026-01-02",
-            selected_video_id=selected.video_id,
-            selected_index=1,
-            selected_video=selected,
-            topic="事件标题",
-        ).model_dump_json(),
-        encoding="utf-8",
+    selection_path = selection_dir / "2026-01-02.json"
+    selection = ZackSelection(
+        date="2026-01-02",
+        selected_video_id=selected.video_id,
+        selected_index=1,
+        selected_video=selected,
+        topic="事件标题",
     )
-    runs_dir = tmp_path / "radar" / "runs"
-    runs_dir.mkdir(parents=True)
-    (runs_dir / "2026-01-02.json").write_text(
-        json.dumps({
-            "workflow": "daily-radar",
-            "date": "2026-01-02",
-            "status": "stale",
-            "stages": [{"name": "source-research", "status": "stale"}],
-        }),
+    selection_path.write_text(selection.model_dump_json(), encoding="utf-8")
+    cfg = Config(data_dir=str(tmp_path))
+    write_artifact_manifest(
+        research_path,
+        stage="source-research",
+        inputs=[selection_path],
+        params={"max_searches": "2"},
+        model=cfg.llm.model,
+    )
+    selection_path.write_text(
+        selection.model_copy(update={"topic": "已经变更的选题"}).model_dump_json(),
         encoding="utf-8",
     )
     seen = {}
@@ -891,7 +1069,7 @@ def test_zack_draft_ignores_stale_source_research(monkeypatch, tmp_path: Path):
 
     monkeypatch.setattr("ai_clip.radar.stage.generate_zack_draft", fake_generate)
 
-    run_zack_draft(Config(data_dir=str(tmp_path)), date="2026-01-02")
+    run_zack_draft(cfg, date="2026-01-02")
 
     assert seen["research"] == ""
 
@@ -925,7 +1103,7 @@ def test_source_content_transcribes_audio_when_subtitles_missing(monkeypatch, tm
 
     monkeypatch.setattr(yt_dlp, "YoutubeDL", FakeYDL)
     monkeypatch.setattr(
-        "ai_clip.source_content.video.transcribe_audio",
+        "ai_clip.extract.remote.transcribe_audio",
         lambda audio, whisper: ([], "zh", "转写脚本"),
     )
 
