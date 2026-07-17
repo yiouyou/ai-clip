@@ -5,6 +5,23 @@ from typer.testing import CliRunner
 from ai_clip import cli
 from ai_clip.core.doctor import DoctorCheck
 from ai_clip.pair.models import PairReviewReport, ReviewerResult
+from ai_clip.produce.review import ReviewValidationError
+
+
+def test_review_apply_reports_duration_validation_error(monkeypatch):
+    runner = CliRunner()
+    monkeypatch.setattr(
+        "ai_clip.cli.pipeline.run_review_apply",
+        lambda *a, **k: (_ for _ in ()).throw(
+            ReviewValidationError("reviewed remix duration 40s exceeds target 30s")
+        ),
+    )
+
+    result = runner.invoke(cli.app, ["review", "-p", "demo", "--apply"])
+
+    assert result.exit_code == 2
+    assert "review rejected" in result.output
+    assert "40s exceeds target 30s" in result.output
 
 
 def test_daily_radar_is_top_level_workflow_command(monkeypatch):

@@ -70,8 +70,11 @@ def _render_markdown(sb: Storyboard) -> str:
         f"- Theme: {sb.theme}",
         f"- Aspect ratio: {sb.aspect_ratio}",
         f"- Shots: {len(sb.shots)}",
+        f"- Planned duration: {sum(shot.duration_sec for shot in sb.shots):g}s",
         "",
     ]
+    if sb.target_duration_sec > 0:
+        lines.insert(-1, f"- Target duration: {sb.target_duration_sec:g}s")
     if sb.format != VideoFormat.remix:
         lines += [
             "Generate each asset (即梦 / Gemini / ComfyUI), save into `assets/` with "

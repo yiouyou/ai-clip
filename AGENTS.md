@@ -25,7 +25,7 @@ discover → download → extract → analyze → storyboard → [review] → (a
 | extract | `extract/extractor.py`(+ `subtitles.py`、`export.py`) | ffmpeg + faster-whisper | `--subs` 用视频自带字幕代替 whisper |
 | analyze | `analyze/`(analyzer + prompts) | LLM | 爆款拆解 → `ViralAnalysis`;`--intent info\|emotion\|sales` |
 | storyboard | `produce/storyboard.py` + `produce/formats/*` | LLM | 按体裁 → `Storyboard`(若干 `Shot`) |
-| review | `produce/review.py` | — | storyboard ↔ 可编辑 `script.md` 往返(文案人工编辑) |
+| review | `produce/review.py` | — | storyboard ↔ `script.md`;编辑口播、slideshow caption、remix 时间戳并校验时长 |
 | assets | `produce/assets/*`(factory、comfyui、prompt_only) | ComfyUI / 人工 | talking_head/slideshow/montage 的配图 |
 | voiceover | `produce/voiceover.py` + `produce/tts/mimo.py` | MiMo TTS | 默认克隆源说话人音色 |
 | assemble | `produce/assemble.py`(+ `captions.py`、`core/fonts.py`) | ffmpeg | 拼接、配音、可选烧字幕 |
@@ -130,13 +130,18 @@ remix)、`e2e`(80s 片)、`mpttest`、`comfyui_test`。
 
 ## 后续方向
 
-1. **A2 remix 时长收敛** —— remix 以 `--duration` 为目标,但实际超时(dario 要 60s 出
-   ~107s)。收紧:给 LLM 更强约束,且/或在 `produce/formats/remix.py` 里裁/缩片段使总时长
-   贴近目标。
-2. **review 体验** —— `review.py` 目前只往返解说 + remix 时间戳;再支持 slideshow 的
-   `caption` 编辑;apply 时可加总时长校验。
-3. 可选/次要:storyboard 审片 **UI**(基于 `script.md` 的薄 Streamlit);基于 `tools.py` 的
-   **agent 层**(质量自检/重试,一句话 url→mp4)。
+1. storyboard 审片 **UI**(基于 `script.md` 的薄 Streamlit)。
+2. 基于 `tools.py` 的 **agent 层**(质量自检/重试,一句话 url→mp4)。
+3. 可选:把真实 ComfyUI/MoneyPrinter 恢复验收做成默认跳过的本地 integration profile。
+
+已完成 review 增强:`Storyboard.target_duration_sec` 对旧 JSON 默认 0；slideshow 的
+`Caption:` 行可往返编辑；remix apply 超过目标总时长时拒绝写回，CLI exit code 为 2。
+
+已完成的时长规则:
+
+- `produce/formats/remix.py` 按 `--duration` 比例压缩超预算 spans。
+- `produce/assemble.py` 只对 remix 的超长 TTS 使用 `atempo` 收敛。历史 dario 夹具从
+  106.583s 收敛到 59.723s(目标 spans 59.7s)。
 
 ## 坑
 

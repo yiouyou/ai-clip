@@ -49,10 +49,13 @@ cp .env.example .env
 二创:
 
 ```bash
-ai-clip remix "<clip-url>" -p demo --theme "用 60 秒讲清复利"
+ai-clip remix "<clip-url>" -p demo --theme "用 60 秒讲清复利" --duration 60
 ai-clip status -p demo
 ai-clip assemble -p demo
 ```
+
+`remix --duration` 是成片时长上限。系统会按比例收敛 LLM 返回的超预算源片段，并在装配时
+只对 remix 的过长 TTS 做节奏压缩；其他体裁仍会延长镜头以完整容纳口播。
 
 原创:
 
@@ -94,7 +97,7 @@ ai-clip radar-feedback accept --date 2026-07-09 --reason "选题角度合适"
 | `ai-clip source-draft <url> -p P` | 单视频生成原创口播稿;默认只复用与本次 URL、参数、模型及上游输入匹配的产物,`--no-resume` 可强制重跑 |
 | `ai-clip research -p P --theme T` | 生成 `research.json` 和可编辑 `research.md` |
 | `ai-clip storyboard -p P --theme T` | 生成分镜、素材 prompt 和 `storyboard.md` |
-| `ai-clip review -p P` / `--apply` | `storyboard.json` 和 `script.md` 往返 |
+| `ai-clip review -p P` / `--apply` | 往返口播、slideshow caption 和 remix 时间戳；校验 remix 总时长 |
 | `ai-clip pair-review -p P --artifact script --rewrite` | 多模型互审、单次改写并验证 |
 | `ai-clip status -p P` | 查看 artifact freshness 和素材缺失 |
 | `ai-clip status -p P --json` | 输出机器可读项目状态 |

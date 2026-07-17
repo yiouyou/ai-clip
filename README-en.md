@@ -50,10 +50,14 @@ cp .env.example .env
 Remix:
 
 ```bash
-ai-clip remix "<clip-url>" -p demo --theme "explain compounding in 60s"
+ai-clip remix "<clip-url>" -p demo --theme "explain compounding in 60s" --duration 60
 ai-clip status -p demo
 ai-clip assemble -p demo
 ```
+
+`remix --duration` is the finished-video upper bound. Over-budget source spans are
+proportionally shortened, and only remix narration is tempo-fitted during assembly;
+other formats still extend a shot to preserve its full narration.
 
 Original:
 
@@ -96,7 +100,7 @@ ai-clip radar-feedback accept --date 2026-07-09 --reason "useful angle"
 | `ai-clip source-draft <url> -p P` | Generate an original talking-head draft; reuses artifacts only when URL, parameters, model, and upstream inputs match, or use `--no-resume` |
 | `ai-clip research -p P --theme T` | Write `research.json` and editable `research.md` |
 | `ai-clip storyboard -p P --theme T` | Generate storyboard, prompts, and `storyboard.md` |
-| `ai-clip review -p P` / `--apply` | Round-trip `storyboard.json` through `script.md` |
+| `ai-clip review -p P` / `--apply` | Round-trip narration, slideshow captions, and remix timestamps; validate remix duration |
 | `ai-clip pair-review -p P --artifact script --rewrite` | Multi-model review, one rewrite, and verification |
 | `ai-clip status -p P` | Show artifact freshness and missing assets |
 | `ai-clip status -p P --json` | Emit machine-readable project status |

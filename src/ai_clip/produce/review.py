@@ -14,6 +14,11 @@ import re
 from ai_clip.core.models import Storyboard, VideoFormat
 
 _HEADER = re.compile(r"^##\s*shot\s*(\d+)\s*(?:\[([0-9.]+)\s*-\s*([0-9.]+)\])?", re.I)
+_CAPTION = re.compile(r"^Caption:\s*(.*)$", re.I)
+
+
+class ReviewValidationError(ValueError):
+    pass
 
 
 def to_script_md(sb: Storyboard) -> str:
@@ -24,13 +29,23 @@ def to_script_md(sb: Storyboard) -> str:
     ]
     if sb.format == VideoFormat.remix:
         lines.append("# Remix: you may also adjust the [start-end] timestamps (seconds).")
+    if sb.format == VideoFormat.slideshow:
+        lines.append("# Slideshow: edit the Caption: line and narration under each shot.")
+    planned_duration = sum(shot.duration_sec for shot in sb.shots)
+    if sb.target_duration_sec > 0:
+        lines.append(
+            f"# Storyboard duration: {planned_duration:g}s / target {sb.target_duration_sec:g}s."
+        )
     lines.append("")
     for shot in sb.shots:
         if shot.is_source_segment:
             head = f"## shot {shot.index:02d}  [{shot.source_start:g}-{shot.source_end:g}]"
         else:
             head = f"## shot {shot.index:02d}"
-        lines += [head, shot.voiceover.strip(), ""]
+        lines.append(head)
+        if sb.format == VideoFormat.slideshow:
+            lines.append(f"Caption: {shot.caption.strip()}")
+        lines += [shot.voiceover.strip(), ""]
     return "\n".join(lines)
 
 
@@ -67,7 +82,17 @@ def apply_script_md(sb: Storyboard, text: str, source_max: float | None = None) 
         if base is None:
             continue
         shot = base.model_copy()
-        narration = "\n".join(body).strip()
+        body_lines = body.copy()
+        if sb.format == VideoFormat.slideshow:
+            for line_index, line in enumerate(body_lines):
+                if not line.strip():
+                    continue
+                caption_match = _CAPTION.match(line)
+                if caption_match:
+                    shot.caption = caption_match.group(1).strip()
+                    del body_lines[line_index]
+                break
+        narration = "\n".join(body_lines).strip()
         if narration:
             shot.voiceover = narration
         if shot.is_source_segment and start is not None and end is not None:
@@ -80,4 +105,17 @@ def apply_script_md(sb: Storyboard, text: str, source_max: float | None = None) 
                 shot.duration_sec = round(end - start, 3)
         new_shots.append(shot)
 
-    return sb.model_copy(update={"shots": new_shots})
+    updated = sb.model_copy(update={"shots": new_shots})
+    _validate_duration(updated)
+    return updated
+
+
+def _validate_duration(sb: Storyboard) -> None:
+    if sb.format != VideoFormat.remix or sb.target_duration_sec <= 0:
+        return
+    total = sum(shot.duration_sec for shot in sb.shots)
+    if total > sb.target_duration_sec + 0.01:
+        raise ReviewValidationError(
+            f"reviewed remix duration {total:g}s exceeds target "
+            f"{sb.target_duration_sec:g}s; shorten or remove timestamp spans"
+        )

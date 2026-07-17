@@ -725,13 +725,19 @@ def review(
     """Export an editable script.md (the 文案), or --apply edits back to storyboard."""
     cfg = _cfg(config)
     if apply:
-        sb = pipeline.run_review_apply(cfg, project)
+        from ai_clip.produce.review import ReviewValidationError
+
+        try:
+            sb = pipeline.run_review_apply(cfg, project)
+        except ReviewValidationError as exc:
+            console.print(f"[red]review rejected[/]: {exc}")
+            raise typer.Exit(2) from exc
         console.print(f"[green]applied[/] script -> storyboard ({len(sb.shots)} shots)")
     else:
         path = pipeline.run_review_export(cfg, project)
         console.print(
             f"[green]script[/] -> {path}\n"
-            "[yellow]Edit the narration (and remix timestamps), then:[/] "
+            "[yellow]Edit narration, slideshow captions, or remix timestamps, then:[/] "
             f"ai-clip review -p {project} --apply"
         )
 
