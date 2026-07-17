@@ -8,7 +8,7 @@ from ai_clip.core.config import TTSConfig, load_config
 from ai_clip.core.models import Shot, Storyboard
 from ai_clip.produce.tts import mimo
 from ai_clip.produce.tts.mimo import MimoTTS, TTSError
-from ai_clip.produce.voiceover import generate_voiceover, voice_filename
+from ai_clip.produce.voiceover import build_mimo, generate_voiceover, voice_filename
 
 ffmpeg_available = shutil.which("ffmpeg") is not None
 
@@ -99,6 +99,70 @@ def test_generate_voiceover_skips_empty(tmp_path: Path):
     assert set(produced) == {1}
     assert (tmp_path / voice_filename(1)).exists()
     assert tts.calls == ["说话内容"]
+
+
+def test_generate_voiceover_reuses_matching_file_and_removes_generated_orphan(tmp_path: Path):
+    class FakeTTS:
+        def __init__(self):
+            self.calls = []
+
+        def synthesize(self, text, out_path, style=""):
+            self.calls.append(text)
+            Path(out_path).write_bytes(text.encode())
+            return Path(out_path)
+
+    tts = FakeTTS()
+    first = Storyboard(project="p", shots=[Shot(index=1, voiceover="first")])
+    changed = Storyboard(project="p", shots=[Shot(index=1, voiceover="changed")])
+
+    generate_voiceover(first, tts, tmp_path, invocation_params={"provider": "fake"})
+    generate_voiceover(first, tts, tmp_path, invocation_params={"provider": "fake"})
+    generate_voiceover(changed, tts, tmp_path, invocation_params={"provider": "fake"})
+
+    assert tts.calls == ["first", "changed"]
+    generate_voiceover(Storyboard(project="p", shots=[]), tts, tmp_path)
+    assert not (tmp_path / voice_filename(1)).exists()
+
+
+def test_generate_voiceover_preserves_unmanaged_human_file(tmp_path: Path):
+    human = tmp_path / voice_filename(1)
+    human.write_bytes(b"human")
+
+    class FailTTS:
+        def synthesize(self, *args, **kwargs):
+            raise AssertionError("human voice must not be overwritten")
+
+    produced = generate_voiceover(
+        Storyboard(project="p", shots=[Shot(index=1, voiceover="line")]),
+        FailTTS(),
+        tmp_path,
+    )
+
+    assert produced[1] == human
+    assert human.read_bytes() == b"human"
+
+
+def test_build_mimo_reuses_reference_and_falls_back_without_source(monkeypatch, tmp_path: Path):
+    source = tmp_path / "source.wav"
+    source.write_bytes(b"source")
+    reference = tmp_path / "reference.mp3"
+    calls = []
+
+    def fake_reference(source_audio, out, seconds):
+        calls.append(seconds)
+        Path(out).write_bytes(b"reference")
+        return Path(out)
+
+    monkeypatch.setattr("ai_clip.produce.voiceover.make_reference_clip", fake_reference)
+    cfg = TTSConfig(api_key="k", model="mimo-v2.5-tts-voiceclone")
+
+    cloned = build_mimo(cfg, source, reference)
+    build_mimo(cfg, source, reference)
+    preset = build_mimo(cfg, None, reference)
+
+    assert cloned.cfg.model == "mimo-v2.5-tts-voiceclone"
+    assert preset.cfg.model == "mimo-v2.5-tts"
+    assert calls == [10.0]
 
 
 def test_env_key_resolution(tmp_path: Path, monkeypatch):

@@ -8,6 +8,7 @@ only swap the positive-prompt text into nodes tagged with AICLIP_PROMPT.
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import time
 from pathlib import Path
@@ -57,6 +58,19 @@ class ComfyUIProvider:
                 f"workflow template has no node with text == {_PROMPT_PLACEHOLDER!r}"
             )
         return graph
+
+    def cache_params(self) -> dict[str, str]:
+        workflow = json.dumps(
+            self.workflow_template,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return {
+            "provider": self.name,
+            "base_url": self.base_url,
+            "workflow_sha256": hashlib.sha256(workflow).hexdigest(),
+        }
 
     def generate(self, shot: Shot, assets_dir: Path) -> Path:
         graph = self._inject_prompt(shot.image_prompt)

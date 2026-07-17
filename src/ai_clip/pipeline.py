@@ -30,7 +30,7 @@ from ai_clip.radar.models import (
 )
 from ai_clip.source_research import SourceResearchReport
 from ai_clip.core.paths import ProjectPaths, read_model, write_model
-from ai_clip.core.artifacts import write_artifact_manifest, write_text_atomic
+from ai_clip.core.artifacts import artifact_manifest_path, write_artifact_manifest, write_text_atomic
 from ai_clip.discover import discover as discover_stage
 from ai_clip.download import download as download_stage
 from ai_clip.extract import extract as extract_stage
@@ -156,7 +156,7 @@ def run_research(cfg: Config, project: str, theme: str = "") -> Path:
     write_model(pp.research_json, report)
     write_text_atomic(pp.research_md, report.markdown, encoding="utf-8")
     inputs = _existing_paths(pp.transcript_json, pp.analysis_json)
-    params = _research_params(cfg, theme)
+    params = _research_params(cfg, theme, "source")
     write_artifact_manifest(
         pp.research_json,
         stage="research",
@@ -174,6 +174,25 @@ def run_research(cfg: Config, project: str, theme: str = "") -> Path:
     return pp.research_md
 
 
+def run_topic_research(cfg: Config, project: str, theme: str) -> Path:
+    from ai_clip.research import generate_topic_research
+
+    pp = _paths(cfg, project)
+    with billing.account(pp.root, "topic_research"):
+        report = generate_topic_research(theme=theme, cfg=cfg)
+    write_model(pp.research_json, report)
+    write_text_atomic(pp.research_md, report.markdown, encoding="utf-8")
+    params = _research_params(cfg, theme, "topic")
+    for path in (pp.research_json, pp.research_md):
+        write_artifact_manifest(
+            path,
+            stage="topic-research",
+            params=params,
+            model=cfg.llm.model,
+        )
+    return pp.research_md
+
+
 def run_storyboard(
     cfg: Config,
     project: str,
@@ -186,16 +205,18 @@ def run_storyboard(
     n_shots: int = 6,
     use_research: bool = True,
     allow_untracked_research: bool = True,
+    use_source_context: bool = True,
+    research_mode: str = "source",
 ) -> Storyboard:
     pp = _paths(cfg, project)
     analysis = (
         read_model(pp.analysis_json, ViralAnalysis)
-        if pp.analysis_json.exists()
+        if use_source_context and pp.analysis_json.exists()
         else None
     )
     transcript = (
         read_model(pp.transcript_json, Transcript)
-        if pp.transcript_json.exists()
+        if use_source_context and pp.transcript_json.exists()
         else None
     )
     research_path = (
@@ -203,6 +224,7 @@ def run_storyboard(
             pp,
             cfg,
             theme,
+            mode=research_mode,
             allow_untracked=allow_untracked_research,
         )
         if use_research
@@ -227,7 +249,10 @@ def run_storyboard(
         )
     write_model(pp.storyboard_json, sb)
     write_storyboard_files(sb, pp.prompts_dir, pp.storyboard_md)
-    inputs = _existing_paths(pp.analysis_json, pp.transcript_json, pp.research_md)
+    inputs = _existing_paths(
+        *([pp.analysis_json, pp.transcript_json] if use_source_context else []),
+        *([research_path] if research_path else []),
+    )
     params = {
         "theme": theme,
         "format": fmt.value,
@@ -236,6 +261,7 @@ def run_storyboard(
         "n_shots": str(n_shots),
         "prompt_version": _PROMPT_VERSIONS["storyboard"],
         "research_used": str(bool(research_path)),
+        "source_context_used": str(use_source_context),
     }
     write_artifact_manifest(
         pp.storyboard_json,
@@ -306,17 +332,37 @@ def run_assets(cfg: Config, project: str) -> int:
     provider (ComfyUI when available, else prompt_only which is a no-op and
     leaves it to a human). Returns the number of assets generated."""
     from ai_clip.produce.assets.factory import resolve_image_provider
+    from ai_clip.produce.assets.cache import (
+        asset_needs_generation,
+        asset_params,
+        record_generated_asset,
+        remove_orphaned_generated_assets,
+    )
 
     pp = _paths(cfg, project)
     sb = read_model(pp.storyboard_json, Storyboard)
     generated = 0
+    expected = {shot.image_file for shot in sb.shots if shot.image_file}
+    remove_orphaned_generated_assets(pp.assets_dir, expected)
     for shot in sb.shots:
         if not shot.image_file or not shot.image_prompt:
             continue
-        if (pp.assets_dir / shot.image_file).exists():
+        out = pp.assets_dir / shot.image_file
+        if out.exists() and not artifact_manifest_path(out).exists():
             continue
         provider = resolve_image_provider(cfg.assets, engine=shot.asset_engine)
-        if provider.generate(shot, pp.assets_dir) is not None:
+        params = asset_params(shot, provider)
+        needs_generation = asset_needs_generation(out, params)
+        if not needs_generation:
+            continue
+        if provider.name == "prompt_only":
+            if out.exists() and artifact_manifest_path(out).exists():
+                out.unlink()
+                artifact_manifest_path(out).unlink(missing_ok=True)
+            continue
+        generated_path = provider.generate(shot, pp.assets_dir)
+        if generated_path is not None:
+            record_generated_asset(generated_path, params)
             generated += 1
     return generated
 
@@ -355,8 +401,22 @@ def run_voiceover(cfg: Config, project: str) -> dict[int, object]:
     if pp.transcript_json.exists():
         source_audio = read_model(pp.transcript_json, Transcript).audio_path
     tts = build_mimo(cfg.tts, source_audio, pp.reference_audio)
+    inputs = [pp.reference_audio] if pp.reference_audio.exists() else []
     with billing.account(pp.root, "voiceover"):
-        return generate_voiceover(sb, tts, pp.voice_dir)
+        return generate_voiceover(
+            sb,
+            tts,
+            pp.voice_dir,
+            invocation_params={
+                "provider": tts.name,
+                "base_url": tts.cfg.base_url.rstrip("/"),
+                "model": tts.cfg.model,
+                "voice": tts.cfg.voice,
+                "clone_from_source": str(tts.cfg.clone_from_source),
+                "reference_seconds": str(tts.cfg.reference_seconds),
+            },
+            inputs=inputs,
+        )
 
 
 def run_assemble(cfg: Config, project: str):

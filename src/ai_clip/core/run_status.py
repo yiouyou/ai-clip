@@ -308,6 +308,8 @@ def _overall_status(run: WorkflowRunStatus) -> str:
         return "failed"
     if any(item == "running" for item in statuses):
         return "running"
+    if any(item == "waiting" for item in statuses):
+        return "waiting"
     if any(item == "stale" for item in statuses):
         return "stale"
     if statuses and all(item in {"succeeded", "skipped"} for item in statuses):

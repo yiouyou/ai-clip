@@ -7,10 +7,17 @@ human step is still required (creating assets for generated formats).
 from __future__ import annotations
 
 from functools import wraps
+from typing import Any
 
 from ai_clip import pipeline
 from ai_clip.core.config import Config
-from ai_clip.core.stages import execute_workflow
+from ai_clip.core.stages import (
+    StageExecution,
+    StageInvocation,
+    StageResult,
+    execute_workflow,
+    stage_execution,
+)
 from ai_clip.core.models import Intent, Platform, ProductProfile, VideoFormat
 from ai_clip.core.paths import ProjectPaths
 from ai_clip.core.run_lock import RunLock
@@ -44,11 +51,27 @@ def _begin(cfg: Config, project: str, workflow: str) -> None:
 
 
 def _execute(
+    cfg: Config,
+    project: str,
     workflow: str,
-    handlers,
+    executions: dict[str, StageExecution[Any]],
     flags: dict[str, bool] | None = None,
-) -> None:
-    execute_workflow(REGISTRY.workflow(workflow), handlers, flags)
+) -> dict[str, StageResult[Any]]:
+    def tracker_factory(invocation: StageInvocation):
+        return _stage(
+            cfg,
+            project,
+            REGISTRY.workflow(workflow).status_key,
+            invocation.name,
+            dict(invocation.inputs),
+        )
+
+    return execute_workflow(
+        REGISTRY.workflow(workflow),
+        executions,
+        flags,
+        tracker_factory,
+    )
 
 
 def _project_locked(workflow: str):
@@ -83,26 +106,30 @@ def transcribe(cfg: Config, project: str, url: str) -> dict:
     txt = None
 
     def download_stage():
-        with _stage(cfg, project, workflow, "download", {"url": url}) as stage:
-            clip = pipeline.run_download(cfg, project, url)
-            stage.set(outputs={"clip": clip.video_path})
+        clip = pipeline.run_download(cfg, project, url)
+        return StageResult(value=clip, outputs={"clip": clip.video_path})
 
     def extract_stage():
-        with _stage(cfg, project, workflow, "extract") as stage:
-            transcript = pipeline.run_extract(cfg, project)
-            stage.set(
-                metrics={"segments": len(transcript.segments), "language": transcript.language}
-            )
+        transcript = pipeline.run_extract(cfg, project)
+        return StageResult(
+            value=transcript,
+            metrics={"segments": len(transcript.segments), "language": transcript.language},
+        )
 
     def export_stage():
         nonlocal srt, txt
-        with _stage(cfg, project, workflow, "export") as stage:
-            srt, txt = pipeline.run_export(cfg, project)
-            stage.set(outputs={"srt": str(srt), "txt": str(txt)})
+        srt, txt = pipeline.run_export(cfg, project)
+        return StageResult(value=(srt, txt), outputs={"srt": str(srt), "txt": str(txt)})
 
     _execute(
+        cfg,
+        project,
         "transcribe",
-        {"download": download_stage, "extract": extract_stage, "export": export_stage},
+        {
+            "download": stage_execution("download", download_stage, {"url": url}),
+            "extract": stage_execution("extract", extract_stage),
+            "export": stage_execution("export", export_stage),
+        },
     )
     return {
         "workflow": workflow,
@@ -122,22 +149,29 @@ def teardown(
     analysis = None
 
     def download_stage():
-        with _stage(cfg, project, workflow, "download", {"url": url}):
-            pipeline.run_download(cfg, project, url)
+        return StageResult(value=pipeline.run_download(cfg, project, url))
 
     def extract_stage():
-        with _stage(cfg, project, workflow, "extract"):
-            pipeline.run_extract(cfg, project)
+        return StageResult(value=pipeline.run_extract(cfg, project))
 
     def analyze_stage():
         nonlocal analysis
-        with _stage(cfg, project, workflow, "analyze", {"intent": intent.value}) as stage:
-            analysis = pipeline.run_analyze(cfg, project, intent)
-            stage.set(metrics={"intent": analysis.intent})
+        analysis = pipeline.run_analyze(cfg, project, intent)
+        return StageResult(value=analysis, metrics={"intent": analysis.intent})
 
     _execute(
+        cfg,
+        project,
         "teardown",
-        {"download": download_stage, "extract": extract_stage, "analyze": analyze_stage},
+        {
+            "download": stage_execution("download", download_stage, {"url": url}),
+            "extract": stage_execution("extract", extract_stage),
+            "analyze": stage_execution(
+                "analyze",
+                analyze_stage,
+                {"intent": intent.value},
+            ),
+        },
     )
     if analysis is None:
         raise RuntimeError("teardown workflow did not produce analysis")
@@ -177,47 +211,43 @@ def source_draft(
         nonlocal download_reused
         clip = pipeline.load_current_download(cfg, project, url) if resume else None
         download_reused = clip is not None
-        with _stage(cfg, project, workflow, "download", {"url": url}) as stage:
-            if clip is not None:
-                stage.set(
-                    status="skipped",
-                    outputs={"clip": str(pp.clip_json)},
-                    metrics={"reused": True},
-                )
-                return
-            clip = pipeline.run_download(cfg, project, url)
-            stage.set(outputs={"clip": getattr(clip, "video_path", str(pp.clip_json))})
+        if clip is not None:
+            return StageResult(
+                value=clip,
+                status="skipped",
+                outputs={"clip": str(pp.clip_json)},
+                metrics={"reused": True},
+            )
+        clip = pipeline.run_download(cfg, project, url)
+        return StageResult(
+            value=clip,
+            outputs={"clip": getattr(clip, "video_path", str(pp.clip_json))},
+        )
 
     def extract_stage():
         nonlocal extract_reused
-        with _stage(
-            cfg,
-            project,
-            workflow,
-            "extract",
-            {"use_subtitles": str(use_subtitles)},
-        ) as stage:
-            transcript = (
-                pipeline.load_current_extract(cfg, project, use_subtitles=use_subtitles)
-                if resume and download_reused
-                else None
-            )
-            extract_reused = transcript is not None
-            if transcript is not None:
-                stage.set(
-                    status="skipped",
-                    outputs={"transcript": str(pp.transcript_json)},
-                    metrics={"reused": True},
-                )
-                return
-            transcript = pipeline.run_extract(cfg, project, use_subtitles=use_subtitles)
-            stage.set(
+        transcript = (
+            pipeline.load_current_extract(cfg, project, use_subtitles=use_subtitles)
+            if resume and download_reused
+            else None
+        )
+        extract_reused = transcript is not None
+        if transcript is not None:
+            return StageResult(
+                value=transcript,
+                status="skipped",
                 outputs={"transcript": str(pp.transcript_json)},
-                metrics={
-                    "segments": len(getattr(transcript, "segments", [])),
-                    "language": getattr(transcript, "language", ""),
-                },
+                metrics={"reused": True},
             )
+        transcript = pipeline.run_extract(cfg, project, use_subtitles=use_subtitles)
+        return StageResult(
+            value=transcript,
+            outputs={"transcript": str(pp.transcript_json)},
+            metrics={
+                "segments": len(getattr(transcript, "segments", [])),
+                "language": getattr(transcript, "language", ""),
+            },
+        )
 
     def analyze_stage():
         nonlocal analysis, analysis_reused
@@ -227,19 +257,19 @@ def source_draft(
             else None
         )
         analysis_reused = analysis is not None
-        with _stage(cfg, project, workflow, "analyze", {"intent": intent.value}) as stage:
-            if analysis is not None:
-                stage.set(
-                    status="skipped",
-                    outputs={"analysis": str(pp.analysis_json)},
-                    metrics={"intent": analysis.intent, "reused": True},
-                )
-                return
-            analysis = pipeline.run_analyze(cfg, project, intent)
-            stage.set(
+        if analysis is not None:
+            return StageResult(
+                value=analysis,
+                status="skipped",
                 outputs={"analysis": str(pp.analysis_json)},
-                metrics={"intent": analysis.intent},
+                metrics={"intent": analysis.intent, "reused": True},
             )
+        analysis = pipeline.run_analyze(cfg, project, intent)
+        return StageResult(
+            value=analysis,
+            outputs={"analysis": str(pp.analysis_json)},
+            metrics={"intent": analysis.intent},
+        )
 
     def research_stage():
         nonlocal research_reused
@@ -249,16 +279,15 @@ def source_draft(
             else None
         )
         research_reused = research_md is not None
-        with _stage(cfg, project, workflow, "research", {"theme": theme}) as stage:
-            if research_md is not None:
-                stage.set(
-                    status="skipped",
-                    outputs={"research": str(research_md)},
-                    metrics={"reused": True},
-                )
-                return
-            research_md = pipeline.run_research(cfg, project, theme=theme)
-            stage.set(outputs={"research": str(research_md)})
+        if research_md is not None:
+            return StageResult(
+                value=research_md,
+                status="skipped",
+                outputs={"research": str(research_md)},
+                metrics={"reused": True},
+            )
+        research_md = pipeline.run_research(cfg, project, theme=theme)
+        return StageResult(value=research_md, outputs={"research": str(research_md)})
 
     def source_draft_stage():
         nonlocal draft
@@ -274,33 +303,46 @@ def source_draft(
             if resume and analysis_reused and (not research or research_reused)
             else None
         )
-        with _stage(cfg, project, workflow, "source-draft", {"stance": stance}) as stage:
-            if draft is not None:
-                stage.set(
-                    status="skipped",
-                    outputs={"draft": str(draft)},
-                    metrics={"reused": True},
-                )
-                return
-            draft = pipeline.run_source_draft(
-                cfg,
-                project,
-                intent=intent,
-                stance=stance,
-                use_research=research,
-                research_theme=theme,
-                allow_untracked_research=False,
+        if draft is not None:
+            return StageResult(
+                value=draft,
+                status="skipped",
+                outputs={"draft": str(draft)},
+                metrics={"reused": True},
             )
-            stage.set(outputs={"draft": str(draft)})
+        draft = pipeline.run_source_draft(
+            cfg,
+            project,
+            intent=intent,
+            stance=stance,
+            use_research=research,
+            research_theme=theme,
+            allow_untracked_research=False,
+        )
+        return StageResult(value=draft, outputs={"draft": str(draft)})
 
     _execute(
+        cfg,
+        project,
         "source-draft",
         {
-            "download": download_stage,
-            "extract": extract_stage,
-            "analyze": analyze_stage,
-            "research": research_stage,
-            "source-draft": source_draft_stage,
+            "download": stage_execution("download", download_stage, {"url": url}),
+            "extract": stage_execution(
+                "extract",
+                extract_stage,
+                {"use_subtitles": str(use_subtitles)},
+            ),
+            "analyze": stage_execution(
+                "analyze",
+                analyze_stage,
+                {"intent": intent.value},
+            ),
+            "research": stage_execution("research", research_stage, {"theme": theme}),
+            "source-draft": stage_execution(
+                "source-draft",
+                source_draft_stage,
+                {"stance": stance},
+            ),
         },
         {"research": research},
     )
@@ -330,72 +372,72 @@ def remix(
     out = None
 
     def download_stage():
-        with _stage(cfg, project, workflow, "download", {"url": url}):
-            pipeline.run_download(cfg, project, url)
+        return StageResult(value=pipeline.run_download(cfg, project, url))
 
     def extract_stage():
-        with _stage(
-            cfg,
-            project,
-            workflow,
-            "extract",
-            {"use_subtitles": str(use_subtitles)},
-        ):
-            pipeline.run_extract(cfg, project, use_subtitles=use_subtitles)
+        return StageResult(
+            value=pipeline.run_extract(cfg, project, use_subtitles=use_subtitles)
+        )
 
     def analyze_stage():
-        with _stage(cfg, project, workflow, "analyze", {"intent": intent.value}):
-            pipeline.run_analyze(cfg, project, intent)
+        return StageResult(value=pipeline.run_analyze(cfg, project, intent))
 
     def research_stage():
-        with _stage(cfg, project, workflow, "research", {"theme": theme}) as stage:
-            research_md = pipeline.run_research(cfg, project, theme=theme)
-            stage.set(outputs={"research": str(research_md)})
+        research_md = pipeline.run_research(cfg, project, theme=theme)
+        return StageResult(value=research_md, outputs={"research": str(research_md)})
 
     def storyboard_stage():
-        with _stage(
+        sb = pipeline.run_storyboard(
             cfg,
             project,
-            workflow,
-            "storyboard",
-            {"theme": theme, "duration": str(duration), "shots": str(n_shots)},
-        ) as stage:
-            sb = pipeline.run_storyboard(
-                cfg,
-                project,
-                theme,
-                fmt=VideoFormat.remix,
-                intent=intent,
-                stance=stance,
-                product=product,
-                duration_sec=duration,
-                n_shots=n_shots,
-                use_research=research,
-                allow_untracked_research=False,
-            )
-            stage.set(metrics={"shots": len(sb.shots), "format": sb.format.value})
+            theme,
+            fmt=VideoFormat.remix,
+            intent=intent,
+            stance=stance,
+            product=product,
+            duration_sec=duration,
+            n_shots=n_shots,
+            use_research=research,
+            allow_untracked_research=False,
+        )
+        return StageResult(
+            value=sb,
+            metrics={"shots": len(sb.shots), "format": sb.format.value},
+        )
 
     def voiceover_stage():
-        with _stage(cfg, project, workflow, "voiceover") as stage:
-            produced = pipeline.run_voiceover(cfg, project)
-            stage.set(metrics={"voiceovers": len(produced)})
+        produced = pipeline.run_voiceover(cfg, project)
+        return StageResult(value=produced, metrics={"voiceovers": len(produced)})
 
     def assemble_stage():
         nonlocal out
-        with _stage(cfg, project, workflow, "assemble") as stage:
-            out = pipeline.run_assemble(cfg, project)
-            stage.set(outputs={"output": str(out)})
+        out = pipeline.run_assemble(cfg, project)
+        return StageResult(value=out, outputs={"output": str(out)})
 
     _execute(
+        cfg,
+        project,
         "remix",
         {
-            "download": download_stage,
-            "extract": extract_stage,
-            "analyze": analyze_stage,
-            "research": research_stage,
-            "storyboard": storyboard_stage,
-            "voiceover": voiceover_stage,
-            "assemble": assemble_stage,
+            "download": stage_execution("download", download_stage, {"url": url}),
+            "extract": stage_execution(
+                "extract",
+                extract_stage,
+                {"use_subtitles": str(use_subtitles)},
+            ),
+            "analyze": stage_execution(
+                "analyze",
+                analyze_stage,
+                {"intent": intent.value},
+            ),
+            "research": stage_execution("research", research_stage, {"theme": theme}),
+            "storyboard": stage_execution(
+                "storyboard",
+                storyboard_stage,
+                {"theme": theme, "duration": str(duration), "shots": str(n_shots)},
+            ),
+            "voiceover": stage_execution("voiceover", voiceover_stage),
+            "assemble": stage_execution("assemble", assemble_stage),
         },
         {"research": research},
     )
@@ -426,74 +468,89 @@ def original(
     generated = 0
     missing = []
     out = None
+    flags = {"research": research, "assets-ready": False}
 
     def research_stage():
-        with _stage(cfg, project, workflow, "research", {"theme": theme}) as stage:
-            research_md = pipeline.run_research(cfg, project, theme=theme)
-            stage.set(outputs={"research": str(research_md)})
+        research_md = pipeline.run_topic_research(cfg, project, theme=theme)
+        return StageResult(value=research_md, outputs={"research": str(research_md)})
 
     def storyboard_stage():
         nonlocal sb
-        with _stage(
+        sb = pipeline.run_storyboard(
             cfg,
             project,
-            workflow,
-            "storyboard",
-            {
-                "theme": theme,
-                "format": fmt.value,
-                "duration": str(duration),
-                "shots": str(n_shots),
-            },
-        ) as stage:
-            sb = pipeline.run_storyboard(
-                cfg,
-                project,
-                theme,
-                fmt=fmt,
-                intent=intent,
-                stance=stance,
-                product=product,
-                duration_sec=duration,
-                n_shots=n_shots,
-                use_research=research,
-                allow_untracked_research=False,
-            )
-            stage.set(metrics={"shots": len(sb.shots), "format": sb.format.value})
+            theme,
+            fmt=fmt,
+            intent=intent,
+            stance=stance,
+            product=product,
+            duration_sec=duration,
+            n_shots=n_shots,
+            use_research=research,
+            allow_untracked_research=False,
+            use_source_context=False,
+            research_mode="topic",
+        )
+        return StageResult(
+            value=sb,
+            metrics={"shots": len(sb.shots), "format": sb.format.value},
+        )
 
     def assets_stage():
-        nonlocal generated
-        with _stage(cfg, project, workflow, "assets") as stage:
-            generated = pipeline.run_assets(cfg, project)
-            stage.set(metrics={"generated": generated})
+        nonlocal generated, missing
+        generated = pipeline.run_assets(cfg, project)
+        if sb is None:
+            raise RuntimeError("original workflow did not produce storyboard")
+        missing = check_assets(sb, pp.assets_dir)
+        flags["assets-ready"] = not missing
+        return StageResult(
+            value=generated,
+            status="waiting" if missing else "succeeded",
+            metrics={"generated": generated, **({"missing_assets": len(missing)} if missing else {})},
+        )
 
     def voiceover_stage():
-        with _stage(cfg, project, workflow, "voiceover") as stage:
-            produced = pipeline.run_voiceover(cfg, project)
-            stage.set(metrics={"voiceovers": len(produced)})
+        produced = pipeline.run_voiceover(cfg, project)
+        return StageResult(value=produced, metrics={"voiceovers": len(produced)})
 
     def assemble_stage():
         nonlocal missing, out
         if sb is None:
             raise RuntimeError("original workflow did not produce storyboard")
         missing = check_assets(sb, pp.assets_dir)
-        with _stage(cfg, project, workflow, "assemble") as stage:
-            if missing:
-                stage.set(status="skipped", metrics={"missing_assets": len(missing)})
-                return
-            out = pipeline.run_assemble(cfg, project)
-            stage.set(outputs={"output": str(out)})
+        if missing:
+            return StageResult(
+                status="skipped",
+                metrics={"missing_assets": len(missing)},
+            )
+        out = pipeline.run_assemble(cfg, project)
+        return StageResult(value=out, outputs={"output": str(out)})
 
     _execute(
+        cfg,
+        project,
         "original",
         {
-            "research": research_stage,
-            "storyboard": storyboard_stage,
-            "assets": assets_stage,
-            "voiceover": voiceover_stage,
-            "assemble": assemble_stage,
+            "topic-research": stage_execution(
+                "topic-research",
+                research_stage,
+                {"theme": theme},
+            ),
+            "storyboard": stage_execution(
+                "storyboard",
+                storyboard_stage,
+                {
+                    "theme": theme,
+                    "format": fmt.value,
+                    "duration": str(duration),
+                    "shots": str(n_shots),
+                },
+            ),
+            "assets": stage_execution("assets", assets_stage),
+            "voiceover": stage_execution("voiceover", voiceover_stage),
+            "assemble": stage_execution("assemble", assemble_stage),
         },
-        {"research": research},
+        flags,
     )
     if missing:
         return {

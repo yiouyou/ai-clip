@@ -1,5 +1,6 @@
 import pytest
 import json
+from pathlib import Path
 
 from ai_clip import workflows
 from ai_clip.core.config import Config
@@ -36,6 +37,9 @@ def test_transcribe_order(monkeypatch, tmp_path):
     status = json.loads((tmp_path / "p" / "runs" / "transcribe.json").read_text(encoding="utf-8"))
     assert status["status"] == "succeeded"
     assert [stage["name"] for stage in status["stages"]] == ["download", "extract", "export"]
+    assert status["stages"][0]["inputs"] == {"url": "url"}
+    assert status["stages"][0]["outputs"] == {"clip": "v.mp4"}
+    assert status["stages"][1]["metrics"] == {"segments": 0, "language": "zh"}
     assert status["usage"]["total"]["calls"] == 0
 
 
@@ -206,6 +210,9 @@ def test_source_draft_reuses_existing_artifacts_by_default(monkeypatch, tmp_path
     assert result["hook"] == "hook"
     assert result["draft"] == str(root / "source_draft.md")
     assert calls == []
+    status = json.loads(Path(result["run_status"]).read_text(encoding="utf-8"))
+    assert [stage["status"] for stage in status["stages"]] == ["skipped"] * 5
+    assert all(stage["metrics"]["reused"] for stage in status["stages"])
 
 
 def test_source_draft_no_resume_forces_stages(monkeypatch, tmp_path):
@@ -395,13 +402,25 @@ def test_original_needs_assets(monkeypatch, tmp_path):
     sb = Storyboard(project="p", shots=[Shot(index=1, image_file="shot_01.png", image_prompt="x")])
     monkeypatch.setattr(workflows.pipeline, "run_storyboard", lambda *a, **k: sb)
     monkeypatch.setattr(workflows.pipeline, "run_assets", lambda c, p: 0)
-    monkeypatch.setattr(workflows.pipeline, "run_voiceover", lambda c, p: {})
+    voiceover_called = False
+
+    def voiceover(*args):
+        nonlocal voiceover_called
+        voiceover_called = True
+        return {}
+
+    monkeypatch.setattr(workflows.pipeline, "run_voiceover", voiceover)
     monkeypatch.setattr(workflows, "check_assets", lambda sb, d: ["shot_01 (shot_01.png)"])
     monkeypatch.setattr(workflows.pipeline, "run_assemble", lambda c, p: "should_not_run")
     r = workflows.original(Config(data_dir=str(tmp_path)), "p", "theme")
     assert r["status"] == "needs_assets"
     assert r["missing"] == ["shot_01 (shot_01.png)"]
     assert r["run_status"].endswith("original.json")
+    assert voiceover_called is False
+    status = json.loads(Path(r["run_status"]).read_text(encoding="utf-8"))
+    assert status["status"] == "waiting"
+    assert status["stages"][-1]["name"] == "assets"
+    assert status["stages"][-1]["status"] == "waiting"
 
 
 def test_original_can_run_research_before_storyboard(monkeypatch, tmp_path):
@@ -409,7 +428,7 @@ def test_original_can_run_research_before_storyboard(monkeypatch, tmp_path):
     sb = Storyboard(project="p", shots=[Shot(index=1)])
     monkeypatch.setattr(
         workflows.pipeline,
-        "run_research",
+        "run_topic_research",
         lambda c, p, theme="": calls.append(("research", theme)) or "research.md",
     )
     monkeypatch.setattr(

@@ -31,6 +31,26 @@ def generate_project_research(
     analysis: ViralAnalysis | None = None,
     theme: str = "",
 ) -> ProjectResearchReport:
+    return _generate_research(
+        transcript=transcript,
+        cfg=cfg,
+        analysis=analysis,
+        theme=theme,
+    )
+
+
+def generate_topic_research(theme: str, cfg: Config) -> ProjectResearchReport:
+    if not theme.strip():
+        raise ValueError("topic research requires a non-empty theme")
+    return _generate_research(transcript=None, cfg=cfg, analysis=None, theme=theme)
+
+
+def _generate_research(
+    transcript: Transcript | None,
+    cfg: Config,
+    analysis: ViralAnalysis | None,
+    theme: str,
+) -> ProjectResearchReport:
     max_searches = search_count(cfg.source_research.max_searches)
     focus = _DEFAULT_FOCUS[:max_searches]
     query_text = chat(
@@ -65,7 +85,7 @@ def generate_project_research(
         ),
     )
     return ProjectResearchReport(
-        clip_id=transcript.clip_id,
+        clip_id=transcript.clip_id if transcript else "",
         theme=theme,
         search_calls=len(queries),
         queries=queries,
@@ -75,12 +95,14 @@ def generate_project_research(
 
 
 def _fallback_query(
-    transcript: Transcript,
+    transcript: Transcript | None,
     theme: str,
     angle: str,
     description: str,
 ) -> ResearchQuery:
-    topic = theme.strip() or transcript.text[:80].strip() or transcript.clip_id
+    topic = theme.strip()
+    if not topic and transcript is not None:
+        topic = transcript.text[:80].strip() or transcript.clip_id
     return ResearchQuery(
         angle=angle,
         query=f"{topic} {description}",
@@ -100,7 +122,9 @@ def _analysis_for_prompt(analysis: ViralAnalysis | None) -> str:
     }, ensure_ascii=False, indent=2)
 
 
-def _transcript_for_prompt(transcript: Transcript) -> str:
+def _transcript_for_prompt(transcript: Transcript | None) -> str:
+    if transcript is None:
+        return "(theme-only research; no source transcript)"
     text = transcript.text.strip()
     if text:
         return text[:4000]

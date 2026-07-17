@@ -272,7 +272,7 @@ def test_config_env_override(tmp_path: Path, monkeypatch):
     assert cfg.source_research.max_searches == 3
 
 
-def test_config_ignores_removed_scout_key(tmp_path: Path):
+def test_config_rejects_unknown_key(tmp_path: Path):
     config = tmp_path / "config.yaml"
     config.write_text(
         """
@@ -283,10 +283,16 @@ scout:
         encoding="utf-8",
     )
 
-    cfg = load_config(config)
+    with pytest.raises(ValueError, match="scout"):
+        load_config(config)
 
-    assert cfg.radar.channels_path == "config/channels.yaml"
-    assert cfg.radar.top_n == 3
+
+def test_config_rejects_invalid_operational_limits(tmp_path: Path):
+    config = tmp_path / "config.yaml"
+    config.write_text("radar:\n  top_n: -1\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="top_n"):
+        load_config(config)
 
 
 def test_config_ignores_removed_scout_env(tmp_path: Path, monkeypatch):

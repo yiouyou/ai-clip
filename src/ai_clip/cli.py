@@ -18,6 +18,7 @@ from ai_clip.produce.assemble import MissingAssetsError, check_assets
 from ai_clip.core.models import Intent, Platform, Storyboard, VideoFormat
 from ai_clip.core.paths import ProjectPaths, read_model
 from ai_clip.registry import REGISTRY, stage_command, workflow_command
+from ai_clip.research_engine import search_count
 from ai_clip import pipeline, workflows
 
 app = typer.Typer(
@@ -261,7 +262,7 @@ def source_research(
     _require_daily_radar(workflow)
     cfg = _cfg(config)
     if max_searches is not None:
-        cfg.source_research.max_searches = max_searches
+        cfg.source_research.max_searches = search_count(max_searches)
     try:
         report = pipeline.run_source_research(cfg, date)
     except Exception as exc:
@@ -514,7 +515,7 @@ def daily_radar(
     if channel_workers is not None:
         cfg.radar.channel_workers = channel_workers
     if research_searches is not None:
-        cfg.source_research.max_searches = research_searches
+        cfg.source_research.max_searches = search_count(research_searches)
     try:
         result = workflows.daily_radar(
             cfg,
@@ -627,7 +628,7 @@ def research(
     """Research source facts/context before storyboard; writes editable research.md."""
     cfg = _cfg(config)
     if max_searches is not None:
-        cfg.source_research.max_searches = max_searches
+        cfg.source_research.max_searches = search_count(max_searches)
     try:
         path = pipeline.run_research(cfg, project, theme=theme)
     except Exception as exc:
@@ -891,7 +892,7 @@ def source_draft(
     if whisper_model:
         cfg.whisper.model_size = whisper_model
     if research_searches is not None:
-        cfg.source_research.max_searches = research_searches
+        cfg.source_research.max_searches = search_count(research_searches)
     r = workflows.source_draft(
         cfg,
         project,
@@ -928,7 +929,7 @@ def remix(
     cfg = _cfg(config)
     cfg.burn_captions = captions or cfg.burn_captions
     if research_searches is not None:
-        cfg.source_research.max_searches = research_searches
+        cfg.source_research.max_searches = search_count(research_searches)
     r = workflows.remix(
         cfg, project, url, theme, intent=intent, stance=stance,
         product=load_product(product), duration=duration, n_shots=shots,
@@ -961,7 +962,7 @@ def original(
     cfg = _cfg(config)
     cfg.burn_captions = captions or cfg.burn_captions
     if research_searches is not None:
-        cfg.source_research.max_searches = research_searches
+        cfg.source_research.max_searches = search_count(research_searches)
     r = workflows.original(
         cfg, project, theme, fmt=fmt, intent=intent, stance=stance,
         product=load_product(product), duration=duration, n_shots=shots,

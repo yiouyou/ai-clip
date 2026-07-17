@@ -27,7 +27,7 @@ def test_generate_source_research_clamps_searches(monkeypatch):
     cfg = Config()
     cfg.llm.api_key = "llm"
     cfg.source_research.tavily_api_key = "tavily"
-    cfg.source_research.max_searches = 9
+    cfg.source_research.max_searches = 3
 
     replies = [
         """

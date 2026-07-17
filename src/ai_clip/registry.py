@@ -24,7 +24,7 @@ def workflow_command(app, name: str):
 def _stage(
     name: str,
     description: str,
-    run,
+    runner,
     *,
     inputs: tuple[str, ...] = (),
     outputs: tuple[str, ...] = (),
@@ -39,7 +39,7 @@ def _stage(
         inputs=inputs,
         outputs=outputs,
         optional=optional,
-        run=run,
+        runner=runner,
         tool_name=tool_name,
         tool_params=tool_params or {},
         cli_exposed=cli_exposed,
@@ -90,6 +90,15 @@ _stage(
     optional=True,
     tool_name="research",
     tool_params={"project": "project id", "theme": "optional research theme"},
+)
+_stage(
+    "topic-research",
+    "Research a theme without requiring a source transcript.",
+    pipeline.run_topic_research,
+    inputs=("theme",),
+    outputs=("research",),
+    optional=True,
+    cli_exposed=False,
 )
 _stage(
     "storyboard",
@@ -303,11 +312,11 @@ _workflow(
 _workflow(
     "original",
     "Create a video from a theme and generated assets.",
-    WorkflowStep("research", when="research"),
+    WorkflowStep("topic-research", when="research"),
     WorkflowStep("storyboard"),
     WorkflowStep("assets"),
-    WorkflowStep("voiceover"),
-    WorkflowStep("assemble"),
+    WorkflowStep("voiceover", when="assets-ready"),
+    WorkflowStep("assemble", when="assets-ready"),
 )
 _workflow(
     "daily-radar",

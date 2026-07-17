@@ -16,6 +16,7 @@ from ai_clip.radar.collect import (
 )
 from ai_clip.radar.feedback import apply_feedback_events, read_feedback_events, record_feedback
 from ai_clip.radar.models import (
+    ChannelCollectResult,
     ChannelSpec,
     RadarCandidates,
     RadarCollectReport,
@@ -683,6 +684,51 @@ channels:
     )
     stale = {stage["name"] for stage in status["stages"] if stage["status"] == "stale"}
     assert {"zack-ranking", "source-content", "zack-selection", "zack-draft"} <= stale
+
+
+def test_collect_force_preserves_failed_channel_snapshots(monkeypatch, tmp_path: Path):
+    channels_path = tmp_path / "channels.yaml"
+    channel_url = "https://www.youtube.com/@failed"
+    channels_path.write_text(
+        f"channels:\n  - platform: youtube\n    url: {channel_url}\n",
+        encoding="utf-8",
+    )
+    paths = RadarPaths(tmp_path, "2026-01-02")
+    paths.ensure()
+    existing = RadarSnapshot(
+        collected_at="2026-01-02T00:00:00+00:00",
+        video=RadarVideo(
+            video_id="youtube:old",
+            url="old",
+            platform=Platform.youtube,
+            channel_url=channel_url,
+        ),
+    )
+    paths.snapshot_jsonl.write_text(existing.model_dump_json() + "\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "ai_clip.radar.stage.collect_channels_with_diagnostics",
+        lambda *a, **k: RadarCollectReport(
+            collected_at="2026-01-02T01:00:00+00:00",
+            channels=[
+                ChannelCollectResult(
+                    platform=Platform.youtube,
+                    url=channel_url,
+                    status="failed",
+                    error="timeout",
+                )
+            ],
+        ),
+    )
+    cfg = Config(data_dir=str(tmp_path))
+    cfg.radar.channels_path = str(channels_path)
+    cfg.radar.channel_timeout_sec = 0
+
+    count = run_collect(cfg, date="2026-01-02", force=True)
+
+    assert count == 1
+    assert "youtube:old" in paths.snapshot_jsonl.read_text(encoding="utf-8")
+    status = json.loads(paths.run_status_json.read_text(encoding="utf-8"))
+    assert status["stages"][0]["metrics"]["snapshots_preserved"] == 1
 
 
 def test_zack_ranking_dedupes_repeated_snapshots(tmp_path: Path):
@@ -1395,6 +1441,34 @@ channels:
     assert (out_dir / "2026-01-01_top3.json").exists()
     assert (out_dir / "2026-01-02_top3.md").exists()
     assert (out_dir / "2026-01-02_summary.md").exists()
+
+
+def test_radar_backfill_expands_bilibili_details_to_channel_limit(monkeypatch, tmp_path: Path):
+    channels_path = tmp_path / "channels.yaml"
+    channels_path.write_text(
+        "channels:\n  - platform: bilibili\n    url: https://space.bilibili.com/1\n",
+        encoding="utf-8",
+    )
+    seen = {}
+
+    def fake_collect(channels, radar_cfg):
+        seen["channel_limit"] = radar_cfg.channel_limit
+        seen["detail_limit"] = radar_cfg.bilibili_detail_limit
+        return []
+
+    monkeypatch.setattr("ai_clip.radar.backfill.collect_channels", fake_collect)
+    cfg = Config(data_dir=str(tmp_path))
+    cfg.radar.channels_path = str(channels_path)
+
+    run_backfill(
+        cfg,
+        days=7,
+        end_date="2026-01-07",
+        channel_limit=25,
+        channel_timeout=0,
+    )
+
+    assert seen == {"channel_limit": 25, "detail_limit": 25}
 
 
 

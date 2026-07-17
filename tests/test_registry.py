@@ -1,13 +1,17 @@
+from contextlib import contextmanager
+
 import pytest
 from typer.testing import CliRunner
 
 from ai_clip import cli
 from ai_clip.core.stages import (
     StageRegistry,
+    StageResult,
     StageSpec,
     WorkflowSpec,
     WorkflowStep,
     execute_workflow,
+    stage_execution,
 )
 from ai_clip.registry import REGISTRY
 from ai_clip.tools import all_tools
@@ -41,6 +45,20 @@ def test_daily_radar_optional_steps_follow_flags():
     )
 
 
+def test_original_uses_topic_research_and_gates_paid_stages_on_assets():
+    workflow = REGISTRY.workflow("original")
+
+    assert workflow.stage_names({"research": True, "assets-ready": False}) == (
+        "topic-research",
+        "storyboard",
+        "assets",
+    )
+    assert workflow.stage_names({"research": True, "assets-ready": True})[-2:] == (
+        "voiceover",
+        "assemble",
+    )
+
+
 def test_registry_rejects_duplicate_and_unknown_stages():
     registry = StageRegistry()
     with pytest.raises(ValueError, match="kebab-case"):
@@ -68,10 +86,83 @@ def test_execute_workflow_uses_declared_order_and_dynamic_flags():
     def one():
         calls.append("one")
         flags["ready"] = True
+        return StageResult()
 
-    execute_workflow(spec, {"one": one, "two": lambda: calls.append("two")}, flags)
+    execute_workflow(
+        spec,
+        {
+            "one": stage_execution("one", one),
+            "two": stage_execution("two", lambda: StageResult(value=calls.append("two"))),
+        },
+        flags,
+    )
 
     assert calls == ["one", "two"]
+
+
+def test_execute_workflow_rejects_mismatched_invocation_and_raw_results():
+    spec = WorkflowSpec(
+        name="flow",
+        description="flow",
+        steps=(WorkflowStep("one"),),
+    )
+
+    with pytest.raises(ValueError, match="invocation for 'two'"):
+        execute_workflow(spec, {"one": stage_execution("two", StageResult)})
+
+    with pytest.raises(TypeError, match="expected StageResult"):
+        execute_workflow(spec, {"one": stage_execution("one", lambda: "raw")})
+
+    with pytest.raises(ValueError, match="kebab-case"):
+        stage_execution("not_valid", StageResult)
+
+
+def test_execute_workflow_applies_result_metadata_to_tracker():
+    spec = WorkflowSpec(
+        name="flow",
+        description="flow",
+        steps=(WorkflowStep("one"),),
+    )
+    seen = {}
+
+    class Tracker:
+        def set(self, **kwargs):
+            seen["result"] = kwargs
+
+    @contextmanager
+    def tracker_factory(invocation):
+        seen["invocation"] = invocation
+        yield Tracker()
+
+    results = execute_workflow(
+        spec,
+        {
+            "one": stage_execution(
+                "one",
+                lambda: StageResult(
+                    value="payload",
+                    status="waiting",
+                    outputs={"draft": "draft.md"},
+                    metrics={"missing": 2},
+                ),
+                {"source": "source.md"},
+            ),
+        },
+        tracker_factory=tracker_factory,
+    )
+
+    assert results["one"].value == "payload"
+    assert seen["invocation"].inputs == {"source": "source.md"}
+    assert seen["result"] == {
+        "status": "waiting",
+        "outputs": {"draft": "draft.md"},
+        "metrics": {"missing": 2},
+    }
+
+
+def test_stage_result_rejects_runtime_only_statuses():
+    with pytest.raises(ValueError, match="invalid completed stage status"):
+        StageResult(status="failed")
 
 
 def test_tool_registry_is_derived_from_stage_registry():

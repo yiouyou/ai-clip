@@ -55,11 +55,11 @@ def invoke(name: str, cfg: Config, **kwargs: Any) -> Any:
 for spec in REGISTRY.stages():
     if spec.tool_name is None:
         continue
-    if spec.run is None:
+    if spec.runner is None:
         raise ValueError(f"tool stage {spec.name!r} has no runner")
     register(Tool(
         name=spec.tool_name,
         description=spec.description,
-        func=spec.run,
+        func=spec.runner,
         params=dict(spec.tool_params),
     ))

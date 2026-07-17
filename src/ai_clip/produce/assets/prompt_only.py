@@ -12,5 +12,8 @@ from ai_clip.core.models import Shot
 class PromptOnlyProvider:
     name = "prompt_only"
 
+    def cache_params(self) -> dict[str, str]:
+        return {"provider": self.name}
+
     def generate(self, shot: Shot, assets_dir: Path) -> None:  # noqa: ARG002
         return None

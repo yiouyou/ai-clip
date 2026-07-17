@@ -8,6 +8,7 @@ script when requested and writes the normal `assets/shot_NN.png` output.
 from __future__ import annotations
 
 import os
+import hashlib
 import shutil
 import subprocess
 from pathlib import Path
@@ -102,3 +103,16 @@ class SmartIllustratorProvider:
                 f"smart_illustrator completed but did not create {out}"
             )
         return out
+
+    def cache_params(self) -> dict[str, str]:
+        script_hash = ""
+        if self.script.exists():
+            script_hash = hashlib.sha256(self.script.read_bytes()).hexdigest()
+        return {
+            "provider": self.name,
+            "script": str(self.script.resolve()) if self.script else "",
+            "script_sha256": script_hash,
+            "image_provider": self.cfg.smart_illustrator_provider,
+            "model": self.cfg.smart_illustrator_model,
+            "candidates": str(self.cfg.smart_illustrator_candidates),
+        }

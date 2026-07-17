@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from ai_clip.core.artifacts import artifact_manifest_path
+from ai_clip.core.config import WhisperConfig
 from ai_clip.extract.remote import VideoScript, fetch_video_script_report, write_cached_script
 from ai_clip.research_engine import align_queries, execute_searches, search_count
 from ai_clip.source_research.models import ResearchQuery, SearchResult
@@ -47,3 +49,62 @@ def test_remote_video_engine_reuses_cached_script(tmp_path: Path):
     assert result.script is not None
     assert result.script.text == "cached"
     assert result.attempts == ("cache",)
+
+
+def test_remote_video_cache_tracks_url_and_whisper_settings(monkeypatch, tmp_path: Path):
+    url = "https://example.com/video"
+    small = WhisperConfig(model_size="small")
+    write_cached_script(
+        tmp_path,
+        VideoScript(text="old", language="en", segments=[], source="whisper"),
+        url=url,
+        whisper=small,
+    )
+    assert artifact_manifest_path(tmp_path / "script.json").exists()
+    calls = []
+    monkeypatch.setattr("ai_clip.extract.remote.fetch_video_subtitles", lambda *a: None)
+
+    def transcribe(*args):
+        calls.append(args[2].model_size)
+        return VideoScript(text="new", language="en", segments=[], source="whisper")
+
+    monkeypatch.setattr("ai_clip.extract.remote.transcribe_video_audio", transcribe)
+
+    reused = fetch_video_script_report(url, tmp_path, whisper=small)
+    refreshed = fetch_video_script_report(
+        url,
+        tmp_path,
+        whisper=WhisperConfig(model_size="medium"),
+    )
+
+    assert reused.script and reused.script.text == "old"
+    assert refreshed.script and refreshed.script.text == "new"
+    assert calls == ["medium"]
+
+
+def test_remote_video_cache_retries_subtitles_when_cookie_changes(monkeypatch, tmp_path: Path):
+    url = "https://example.com/video"
+    cookie = tmp_path / "cookies.txt"
+    cookie.write_text("old", encoding="utf-8")
+    whisper = WhisperConfig(model_size="small")
+    write_cached_script(
+        tmp_path,
+        VideoScript(text="whisper", language="en", segments=[], source="whisper"),
+        url=url,
+        cookiefile=str(cookie),
+        whisper=whisper,
+    )
+    cookie.write_text("updated-cookie", encoding="utf-8")
+    monkeypatch.setattr(
+        "ai_clip.extract.remote.fetch_video_subtitles",
+        lambda *a: VideoScript(text="official", language="en", segments=[], source="subtitles"),
+    )
+    monkeypatch.setattr(
+        "ai_clip.extract.remote.transcribe_video_audio",
+        lambda *a: (_ for _ in ()).throw(AssertionError("Whisper should not run")),
+    )
+
+    result = fetch_video_script_report(url, tmp_path, str(cookie), whisper=whisper)
+
+    assert result.script and result.script.text == "official"
+    assert result.script.source == "subtitles"

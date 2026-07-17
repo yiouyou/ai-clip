@@ -14,6 +14,8 @@ from ai_clip.radar.collect import (
 from ai_clip.radar.feedback import apply_feedback_events, read_feedback_events
 from ai_clip.radar.models import (
     RadarCandidates,
+    RadarCollectReport,
+    RadarSnapshot,
     ZackDraft,
     ZackSelection,
 )
@@ -65,7 +67,11 @@ def run_collect(cfg: Config, date: str | None = None, force: bool = False) -> in
                 cfg.radar,
                 cfg.radar.channel_timeout_sec,
             )
-        merged = dedupe_snapshots(report.snapshots if force else existing + report.snapshots)
+        preserved = 0
+        if force:
+            merged, preserved = _merge_forced_snapshots(existing, report)
+        else:
+            merged = dedupe_snapshots(existing + report.snapshots)
         write_snapshots(paths.snapshot_jsonl, merged)
         write_json_model(paths.collect_report_json, report.model_copy(update={"snapshots": merged}))
         failed = sum(1 for channel in report.channels if channel.status != "succeeded")
@@ -79,11 +85,29 @@ def run_collect(cfg: Config, date: str | None = None, force: bool = False) -> in
                 "channels": len(report.channels),
                 "channels_failed": failed,
                 "force": force,
+                "snapshots_preserved": preserved,
             },
         )
     if force:
         mark_stale(paths, _downstream_stage_names(paths), "force-collect replaced snapshots")
     return len(merged)
+
+
+def _merge_forced_snapshots(
+    existing: list[RadarSnapshot],
+    report: RadarCollectReport,
+) -> tuple[list[RadarSnapshot], int]:
+    preserve_urls = {
+        channel.url
+        for channel in report.channels
+        if channel.status != "succeeded"
+    }
+    preserved = [
+        snapshot
+        for snapshot in existing
+        if snapshot.video.channel_url in preserve_urls
+    ]
+    return dedupe_snapshots(preserved + report.snapshots), len(preserved)
 
 
 def run_zack_ranking(

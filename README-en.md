@@ -22,10 +22,12 @@ Detailed docs:
 
 - **Prompt-first, human-in-the-loop**: `storyboard.md`, `script.md`, and `research.md` are editable.
 - **Stable filename contract**: shot N uses `assets/shot_NN.png` / `shot_NN.mp4`.
+- **Incremental media cache**: generated images and voice files carry manifests and are reused while their invocation still matches.
 - **Per-project artifacts**: everything lives under `data/<project>/`.
 - **Lightweight metadata**: key artifacts write `<artifact>.meta.json` for freshness checks.
 - **Observable workflows**: composed workflows write `data/<project>/runs/<workflow>.json`.
 - **Composable capabilities**: acquisition, research, and review use shared engines with thin workflow adapters.
+- **Explicit execution contracts**: workflow stages use invocation/result envelopes while pipeline functions retain typed parameters.
 
 ## Requirements
 
@@ -56,7 +58,12 @@ Original:
 
 ```bash
 ai-clip original -p promo --theme "city night-ride vlog opener" --shots 5
+ai-clip original -p promo --theme "AI companies as ecological niches" --research
 ```
+
+`original --research` uses theme-only research with no source-video dependency. `source-draft` and
+`remix` use transcript/analysis-backed research. If required images are missing, original stops in
+`waiting` before invoking TTS.
 
 Single-source original draft:
 
@@ -92,8 +99,8 @@ ai-clip radar-feedback accept --date 2026-07-09 --reason "useful angle"
 | `ai-clip pair-review -p P --artifact script --rewrite` | Multi-model review, one rewrite, and verification |
 | `ai-clip status -p P` | Show artifact freshness and missing assets |
 | `ai-clip status -p P --json` | Emit machine-readable project status |
-| `ai-clip assets -p P` | Generate missing image assets |
-| `ai-clip voiceover -p P` | Generate voiceover |
+| `ai-clip assets -p P` | Generate missing or stale images while preserving unmanaged human assets |
+| `ai-clip voiceover -p P` | Incrementally synthesize per-shot voice while preserving unmanaged WAV files |
 | `ai-clip assemble -p P` | Assemble final mp4 |
 | `ai-clip doctor` | Diagnose local environment |
 | `ai-clip radar-feedback accept\|reject --date D` | Record explicit topic feedback for ranking calibration |
@@ -117,6 +124,9 @@ Config loading order:
 1. `config/default.yaml`
 2. `.env`
 3. CLI arguments
+
+YAML configuration is strict: unknown keys and invalid operational limits fail validation instead of
+silently falling back to defaults.
 
 Common environment variables:
 

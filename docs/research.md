@@ -1,7 +1,11 @@
 # Research 阶段
 
-项目级 `research` 位于 `analyze` 和 `storyboard` 之间，用于在生成口播/分镜前补足事实、
-背景、风险边界和原创角度。
+Research 分为两种输入契约，共享搜索引擎和产物格式：
+
+- `research`：源视频研究，依赖 transcript，可选读取 analysis，供 source-draft/remix 使用。
+- `topic-research`：主题研究，只依赖 theme，供 original 内部使用。
+
+两者都用于在生成口播/分镜前补足事实、背景、风险边界和原创角度。
 
 ## 命令
 
@@ -28,7 +32,7 @@ data/<project>/research.md.meta.json
 - `storyboard` 自动读取 `research.md`
 - `source-draft` 自动读取 `research.md`
 - `remix --research` 会在分镜前先跑 research
-- `original --research` 会在分镜前先跑 research
+- `original --research` 会在分镜前运行不依赖 transcript 的 `topic-research`
 
 ## Freshness
 

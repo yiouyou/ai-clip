@@ -21,10 +21,12 @@ discover -> download -> extract -> analyze -> research -> storyboard -> review -
 
 - **提示词优先 + 人工介入**: `storyboard.md`、`script.md`、`research.md` 都是可编辑文件。
 - **文件名契约稳定**: 第 N 个镜头素材写入 `assets/shot_NN.png` / `shot_NN.mp4`。
+- **媒体增量缓存**: 系统图片和语音带 manifest；prompt、模型、声音或参考音频未变时不会重复生成。
 - **项目产物独立**: 每个项目都在 `data/<project>/` 下，可单独重跑阶段。
 - **轻量 metadata**: 关键产物写 `<artifact>.meta.json`，用于判断 `fresh/stale/missing`。
 - **可观测流程**: 组合 workflow 写 `data/<project>/runs/<workflow>.json`。
 - **能力可组合**: 视频内容获取、research 和 review 使用共享引擎，workflow 只保留领域适配。
+- **执行契约统一**: workflow 阶段使用显式 invocation/result envelope，业务函数保持强类型参数。
 
 ## 环境要求
 
@@ -55,7 +57,11 @@ ai-clip assemble -p demo
 
 ```bash
 ai-clip original -p promo --theme "城市夜骑 vlog 开场" --shots 5
+ai-clip original -p promo --theme "AI 公司的生态位竞争" --research
 ```
+
+`original --research` 使用不依赖源视频的主题研究；`source-draft` 和 `remix` 使用 transcript/
+analysis 驱动的源视频研究。原创流程缺少必要图片时会停在 `waiting`，不会提前调用 TTS。
 
 单视频原创口播:
 
@@ -91,8 +97,8 @@ ai-clip radar-feedback accept --date 2026-07-09 --reason "选题角度合适"
 | `ai-clip pair-review -p P --artifact script --rewrite` | 多模型互审、单次改写并验证 |
 | `ai-clip status -p P` | 查看 artifact freshness 和素材缺失 |
 | `ai-clip status -p P --json` | 输出机器可读项目状态 |
-| `ai-clip assets -p P` | 生成缺失图片素材 |
-| `ai-clip voiceover -p P` | 生成配音 |
+| `ai-clip assets -p P` | 生成缺失或已过期的图片素材，保留无 manifest 的人工图片 |
+| `ai-clip voiceover -p P` | 按镜头增量生成配音，保留无 manifest 的人工 WAV |
 | `ai-clip assemble -p P` | 合成最终 mp4 |
 | `ai-clip doctor` | 本地环境诊断 |
 | `ai-clip radar-feedback accept\|reject --date D` | 记录明确选题反馈，用于后续排序校准 |
@@ -116,6 +122,9 @@ ai-clip radar-feedback accept --date 2026-07-09 --reason "选题角度合适"
 1. `config/default.yaml`
 2. `.env`
 3. 命令行参数
+
+YAML 配置使用严格校验：未知字段、负数 Top N、零 worker 等无效值会直接报错，不会静默
+回退到默认配置。
 
 常用环境变量:
 

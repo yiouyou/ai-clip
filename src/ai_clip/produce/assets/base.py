@@ -13,6 +13,8 @@ from ai_clip.core.models import Shot
 class ImageProvider(Protocol):
     name: str
 
+    def cache_params(self) -> dict[str, str]: ...
+
     def generate(self, shot: Shot, assets_dir: Path) -> Path | None:
         """Produce assets_dir/<shot.image_file>, or return None to defer to a
         human (prompt_only mode)."""

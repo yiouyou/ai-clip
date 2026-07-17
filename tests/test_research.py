@@ -6,14 +6,14 @@ from ai_clip.core.config import Config
 from ai_clip.core.models import Storyboard, Transcript, ViralAnalysis, VideoFormat
 from ai_clip.core.paths import ProjectPaths, read_model, write_model
 from ai_clip.research.models import ProjectResearchReport
-from ai_clip.research.stage import generate_project_research
+from ai_clip.research.stage import generate_project_research, generate_topic_research
 from ai_clip.source_research.models import SearchResult
 
 
-def test_generate_project_research_clamps_searches_and_synthesizes(monkeypatch):
+def test_generate_project_research_uses_bounded_searches_and_synthesizes(monkeypatch):
     cfg = Config()
     cfg.source_research.tavily_api_key = "tavily"
-    cfg.source_research.max_searches = 9
+    cfg.source_research.max_searches = 3
     calls = {"queries": [], "searches": []}
 
     def fake_chat(cfg, system, user):
@@ -56,6 +56,27 @@ def test_generate_project_research_clamps_searches_and_synthesizes(monkeypatch):
     assert report.markdown.startswith("# Research Brief")
 
 
+def test_generate_topic_research_does_not_require_source_material(monkeypatch):
+    cfg = Config()
+    cfg.source_research.tavily_api_key = "tavily"
+    prompts = []
+
+    def fake_chat(cfg, system, user):
+        prompts.append(user)
+        if "Return JSON only" in user:
+            return '{"queries": [{"angle": "event_facts", "query": "topic facts"}]}'
+        return "# Research Brief\n\n## Confirmed Facts\n- topic"
+
+    monkeypatch.setattr("ai_clip.research.stage.chat", fake_chat)
+    monkeypatch.setattr("ai_clip.research.stage.tavily_search", lambda *a, **k: [])
+
+    report = generate_topic_research("AI and biology", cfg)
+
+    assert report.clip_id == ""
+    assert report.theme == "AI and biology"
+    assert any("theme-only research; no source transcript" in prompt for prompt in prompts)
+
+
 def test_run_research_writes_project_artifacts(monkeypatch, tmp_path):
     cfg = Config(data_dir=str(tmp_path))
     pp = ProjectPaths(cfg.data_dir, "demo")
@@ -81,6 +102,58 @@ def test_run_research_writes_project_artifacts(monkeypatch, tmp_path):
     assert manifest.stage == "research"
     assert manifest.params["theme"] == "theme"
     assert str(pp.transcript_json) in manifest.inputs
+
+
+def test_run_topic_research_writes_artifacts_without_transcript(monkeypatch, tmp_path):
+    cfg = Config(data_dir=str(tmp_path))
+    pp = ProjectPaths(cfg.data_dir, "demo")
+    pp.ensure()
+
+    monkeypatch.setattr(
+        "ai_clip.research.generate_topic_research",
+        lambda theme, cfg: ProjectResearchReport(theme=theme, markdown="# Topic research"),
+    )
+
+    path = pipeline.run_topic_research(cfg, "demo", "theme")
+
+    assert path == pp.research_md
+    manifest = read_artifact_manifest(pp.research_md)
+    assert manifest.stage == "topic-research"
+    assert manifest.inputs == {}
+
+
+def test_topic_storyboard_ignores_stale_source_context(monkeypatch, tmp_path):
+    cfg = Config(data_dir=str(tmp_path))
+    pp = ProjectPaths(cfg.data_dir, "demo")
+    pp.ensure()
+    write_model(pp.transcript_json, Transcript(clip_id="old", text="old transcript"))
+    write_model(pp.analysis_json, ViralAnalysis(clip_id="old", formula="old formula"))
+    monkeypatch.setattr(
+        "ai_clip.research.generate_topic_research",
+        lambda theme, cfg: ProjectResearchReport(theme=theme, markdown="topic research"),
+    )
+    pipeline.run_topic_research(cfg, "demo", "new theme")
+
+    def fake_storyboard(**kwargs):
+        assert kwargs["transcript"] is None
+        assert kwargs["analysis"] is None
+        assert kwargs["research_markdown"] == "topic research"
+        return Storyboard(project="demo", format=VideoFormat.talking_head)
+
+    monkeypatch.setattr("ai_clip.pipeline.generate_storyboard", fake_storyboard)
+
+    pipeline.run_storyboard(
+        cfg,
+        "demo",
+        "new theme",
+        use_source_context=False,
+        research_mode="topic",
+        allow_untracked_research=False,
+    )
+
+    manifest = read_artifact_manifest(pp.storyboard_json)
+    assert manifest.params["source_context_used"] == "False"
+    assert str(pp.transcript_json) not in manifest.inputs
 
 
 def test_run_storyboard_writes_manifest_with_research_input(monkeypatch, tmp_path):

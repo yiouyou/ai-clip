@@ -6,19 +6,23 @@ import os
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 _DEFAULT_CONFIG = Path(__file__).resolve().parents[3] / "config" / "default.yaml"
 
 
-class WhisperConfig(BaseModel):
+class StrictConfigModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+
+class WhisperConfig(StrictConfigModel):
     model_size: str = "medium"
     # "auto" lets device.py pick int8 (CPU) or float16 (GPU).
     compute_type: str = "auto"
     language: str | None = None
 
 
-class LLMConfig(BaseModel):
+class LLMConfig(StrictConfigModel):
     # Full base incl. /v1 (OpenAI convention). DeepSeek: https://api.deepseek.com/v1
     base_url: str = "https://api.deepseek.com/v1"
     api_key: str = ""
@@ -28,7 +32,7 @@ class LLMConfig(BaseModel):
     temperature: float | None = None
 
 
-class AssetsConfig(BaseModel):
+class AssetsConfig(StrictConfigModel):
     # auto -> comfyui when its service answers, else prompt_only.
     image_provider: str = "auto"
     video_provider: str = "prompt_only"
@@ -37,25 +41,25 @@ class AssetsConfig(BaseModel):
     smart_illustrator_script: str = ""
     smart_illustrator_provider: str = ""
     smart_illustrator_model: str = ""
-    smart_illustrator_candidates: int = 1
+    smart_illustrator_candidates: int = Field(default=1, ge=1)
 
 
-class TTSConfig(BaseModel):
+class TTSConfig(StrictConfigModel):
     base_url: str = "https://api.xiaomimimo.com/v1"
     api_key: str = ""
     # mimo-v2.5-tts (preset) | mimo-v2.5-tts-voiceclone | mimo-v2.5-tts-voicedesign
     model: str = "mimo-v2.5-tts-voiceclone"
     voice: str = "Chloe"  # preset voice id, used when not cloning
     clone_from_source: bool = True  # clone the source clip's speaker by default
-    reference_seconds: float = 10.0  # length of reference snippet for cloning
+    reference_seconds: float = Field(default=10.0, gt=0)  # reference snippet length
 
 
-class ProduceConfig(BaseModel):
+class ProduceConfig(StrictConfigModel):
     # External produce backend endpoints (optional alternatives to self-built).
     moneyprinter_url: str = "http://127.0.0.1:8080"
 
 
-class PairConfig(BaseModel):
+class PairConfig(StrictConfigModel):
     # OpenAI-compatible review endpoint. NEWAPP_* is applied from .env.
     base_url: str = ""
     api_key: str = ""
@@ -67,37 +71,37 @@ class PairConfig(BaseModel):
     deepseek_base_url: str = "https://api.deepseek.com/v1"
     deepseek_api_key: str = ""
     deepseek_models: list[str] = Field(default_factory=lambda: ["deepseek-4-pro"])
-    timeout: float = 120.0
+    timeout: float = Field(default=120.0, gt=0)
 
 
-class SourceResearchConfig(BaseModel):
+class SourceResearchConfig(StrictConfigModel):
     tavily_api_key: str = ""
-    max_searches: int = 2
-    max_results: int = 5
+    max_searches: int = Field(default=2, ge=1, le=3)
+    max_results: int = Field(default=5, ge=1)
     search_depth: str = "basic"
-    timeout: float = 30.0
+    timeout: float = Field(default=30.0, gt=0)
 
 
-class RadarConfig(BaseModel):
+class RadarConfig(StrictConfigModel):
     channels_path: str = "config/channels.yaml"
     feedback_path: str = "config/radar-feedback.yaml"
-    top_n: int = 3
-    shortlist_n: int = 9
-    channel_limit: int = 20
-    bilibili_detail_limit: int = 8
-    channel_timeout_sec: int = 60
-    channel_workers: int = 4
-    since_days: int = 2
-    max_duration_sec: float = 900.0
+    top_n: int = Field(default=3, ge=1)
+    shortlist_n: int = Field(default=9, ge=1)
+    channel_limit: int = Field(default=20, ge=1)
+    bilibili_detail_limit: int = Field(default=8, ge=1)
+    channel_timeout_sec: int = Field(default=60, ge=0)
+    channel_workers: int = Field(default=4, ge=1)
+    since_days: int = Field(default=2, ge=0)
+    max_duration_sec: float = Field(default=900.0, ge=0)
     timezone: str = "Asia/Shanghai"
     transcribe_missing: bool = True
     transcribe_model_size: str = "small"
     auto_research: bool = True
     auto_research_min_risk: str = "high"
-    auto_research_max_searches: int = 2
+    auto_research_max_searches: int = Field(default=2, ge=1, le=3)
 
 
-class Config(BaseModel):
+class Config(StrictConfigModel):
     data_dir: str = "./data"
     aspect_ratio: str = "9:16"
     burn_captions: bool = False  # burn caption/voiceover text into the video

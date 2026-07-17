@@ -26,9 +26,11 @@ def run_backfill(
     wanted_dates = [(end - timedelta(days=offset)).isoformat() for offset in range(days)]
     wanted = set(wanted_dates)
 
+    effective_channel_limit = channel_limit or cfg.radar.channel_limit
     radar_cfg = cfg.radar.model_copy(update={
         "since_days": 0,
-        "channel_limit": channel_limit or cfg.radar.channel_limit,
+        "channel_limit": effective_channel_limit,
+        "bilibili_detail_limit": effective_channel_limit,
     })
     channels = load_channels(cfg.radar.channels_path)
     if channel_timeout <= 0:

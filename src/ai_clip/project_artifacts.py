@@ -45,9 +45,10 @@ def analyze_params(intent: Intent) -> dict[str, str]:
     }
 
 
-def research_params(cfg: Config, theme: str) -> dict[str, str]:
+def research_params(cfg: Config, theme: str, mode: str = "source") -> dict[str, str]:
     return {
         "theme": theme,
+        "mode": mode,
         "max_searches": str(cfg.source_research.max_searches),
         "max_results": str(cfg.source_research.max_results),
         "search_depth": cfg.source_research.search_depth,
@@ -197,13 +198,18 @@ def current_research_path(
     cfg: Config,
     theme: str,
     *,
+    mode: str = "source",
     allow_untracked: bool = False,
 ) -> Path | None:
-    inputs = existing_paths(paths.transcript_json, paths.analysis_json)
+    inputs = (
+        existing_paths(paths.transcript_json, paths.analysis_json)
+        if mode == "source"
+        else []
+    )
     if artifact_matches(
         paths.research_md,
         inputs=inputs,
-        params=research_params(cfg, theme),
+        params=research_params(cfg, theme, mode),
         model=cfg.llm.model,
     ):
         return paths.research_md

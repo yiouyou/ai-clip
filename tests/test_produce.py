@@ -6,8 +6,11 @@ import pytest
 
 from ai_clip.analyze import analyzer
 from ai_clip.core import llm as llm_mod
-from ai_clip.core.config import AssetsConfig, LLMConfig
-from ai_clip.core.models import AssetEngine, Shot, Transcript, TranscriptSegment, VideoFormat
+from ai_clip import pipeline
+from ai_clip.core.artifacts import artifact_manifest_path
+from ai_clip.core.config import AssetsConfig, Config, LLMConfig
+from ai_clip.core.models import AssetEngine, Shot, Storyboard, Transcript, TranscriptSegment, VideoFormat
+from ai_clip.core.paths import ProjectPaths, write_model
 from ai_clip.produce import storyboard as sb_mod
 from ai_clip.produce.assets.comfyui import ComfyUIError, ComfyUIProvider
 from ai_clip.produce.assets.factory import resolve_image_provider
@@ -206,3 +209,75 @@ def test_comfyui_inject_prompt_missing_placeholder():
     provider = ComfyUIProvider("http://x", {"6": {"inputs": {"text": "fixed"}}})
     with pytest.raises(ComfyUIError):
         provider._inject_prompt("hello")
+
+
+def test_run_assets_reuses_matching_generation_and_refreshes_changed_prompt(
+    monkeypatch,
+    tmp_path,
+):
+    cfg = Config(data_dir=str(tmp_path))
+    paths = ProjectPaths(tmp_path, "demo")
+    paths.ensure()
+    calls = []
+
+    class FakeProvider:
+        name = "fake"
+
+        def cache_params(self):
+            return {"provider": self.name, "model": "v1"}
+
+        def generate(self, shot, assets_dir):
+            calls.append(shot.image_prompt)
+            out = assets_dir / shot.image_file
+            out.write_bytes(shot.image_prompt.encode())
+            return out
+
+    monkeypatch.setattr(
+        "ai_clip.produce.assets.factory.resolve_image_provider",
+        lambda *a, **k: FakeProvider(),
+    )
+    write_model(
+        paths.storyboard_json,
+        Storyboard(project="demo", shots=[Shot(index=1, image_file="shot_01.png", image_prompt="a")]),
+    )
+
+    assert pipeline.run_assets(cfg, "demo") == 1
+    assert pipeline.run_assets(cfg, "demo") == 0
+    write_model(
+        paths.storyboard_json,
+        Storyboard(project="demo", shots=[Shot(index=1, image_file="shot_01.png", image_prompt="b")]),
+    )
+    assert pipeline.run_assets(cfg, "demo") == 1
+
+    assert calls == ["a", "b"]
+    assert artifact_manifest_path(paths.assets_dir / "shot_01.png").exists()
+
+
+def test_run_assets_preserves_human_files_and_removes_generated_orphans(monkeypatch, tmp_path):
+    cfg = Config(data_dir=str(tmp_path))
+    paths = ProjectPaths(tmp_path, "demo")
+    paths.ensure()
+    human = paths.assets_dir / "shot_01.png"
+    human.write_bytes(b"human")
+    write_model(
+        paths.storyboard_json,
+        Storyboard(project="demo", shots=[Shot(index=1, image_file=human.name, image_prompt="a")]),
+    )
+    monkeypatch.setattr(
+        "ai_clip.produce.assets.factory.resolve_image_provider",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("human asset must not resolve provider")),
+    )
+    assert pipeline.run_assets(cfg, "demo") == 0
+    assert human.read_bytes() == b"human"
+
+    from ai_clip.produce.assets.cache import record_generated_asset
+
+    generated = paths.assets_dir / "shot_02.png"
+    generated.write_bytes(b"generated")
+    record_generated_asset(generated, {"provider": "fake"})
+    write_model(paths.storyboard_json, Storyboard(project="demo", shots=[]))
+    pipeline.run_assets(cfg, "demo")
+
+    assert human.exists()
+    assert not generated.exists()
+    assert not artifact_manifest_path(generated).exists()

@@ -33,12 +33,18 @@ discover → download → extract → analyze → storyboard → [review] → (a
 阶段适配:`pipeline.py`(各 `run_*` 函数,付费调用使用 `billing.account()` 块)。
 组合工作流:`workflows.py`；统一阶段/工作流目录:`registry.py` + `core/stages.py`，负责命名、
 输入输出、runner、CLI/tool 暴露、执行顺序和 optional 条件。`tools.py` 从该注册表生成。
+`StageSpec.runner` 是独立调用入口；workflow 将本次调用绑定为 `StageExecution`，handler 必须返回
+`StageResult(value/status/outputs/metrics)`。项目 workflow 由共享 executor 统一写运行状态；Radar
+独立阶段保留自身 tracking，完整编排只套 execution envelope，不能再重复包 tracker。
 Radar 阶段、完整编排、回填分别在 `radar/stage.py`、`radar/workflow.py`、`radar/backfill.py`。
 Daily Radar 顺序是 `collect -> zack-ranking -> source-content -> content-rerank ->`
 `zack-selection -> [source-research] -> zack-draft -> [pair-review -> pair-rewrite -> pair-verify]`。
 Ranking 先按频道/平台批次基线归一化并保留默认 9 个
 shortlist，获取脚本后再收敛到最终 Top 3；高事实风险且 Tavily 可用时自动触发最多 2 次搜索。
 明确的 accept/reject 反馈写入 `data/radar/feedback/events.jsonl`，参与后续 pool/tag 校准。
+项目 research 分为源视频 `research` 和主题型 `topic-research`；后者供 `original --research`
+使用，不读取项目中可能残留的 transcript/analysis。`original` 缺必要图片时停在 `waiting`，
+不会提前调用 TTS。
 外部 produce 后端(可选,用于和自建对比):`produce/backends/`
 (`moneyprinter.py` REST adapter、`narrato.py` 子进程硬接)。
 
@@ -51,6 +57,9 @@ shortlist，获取脚本后再收敛到最终 Top 3；高事实风险且 Tavily 
 
 - **文件名契约**:第 N 个镜头 ⇒ `assets/shot_NN.png` / `shot_NN.mp4`;remix 镜头带
   `source_start/source_end`,不需要素材。`assemble.check_assets` 以 `Shot.expected_files()` 为准。
+- **人工媒体不覆盖**:`assets/shot_NN.*`、`voice/shot_NN.wav` 没有 sidecar manifest 时视为人工
+  产物；增量生成和孤儿清理只管理带系统 manifest 的文件。source-content 的 `script.json`
+  manifest 还记录 URL、来源、Whisper 配置及 cookie 文件签名。
 - **每项目产物**在 `data/<project>/`:`clip.json`、`transcript.json`、`analysis.json`、
   `storyboard.json`(+ `.md`)、`script.md`、`prompts/`、`assets/`、`voice/`、
   `candidates.json`、`cost.jsonl`、`output.mp4`。模型在 `core/models.py`;路径在
@@ -77,7 +86,7 @@ uv venv --python 3.12
 uv pip install -e ".[dev]"                      # 核心 + 测试
 uv pip install -e ".[download,extract]"         # 运行时重依赖(yt-dlp、faster-whisper)
 ruff check src tests        # lint(必须通过)
-pytest -q                   # 215 个测试,须保持全绿
+pytest -q                   # 235 个测试,须保持全绿
 ```
 需要 PATH 上有 **ffmpeg + ffprobe**。开发机的 `.env` 已配:`DEEPSEEK_API_KEY`、
 `OPENAI_API_KEY`、`GEMINI_API_KEY`、`MIMO_API_KEY`、`PEXELS_API_KEY`、`TAVILY_API_KEY`。

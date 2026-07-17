@@ -4,7 +4,13 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 
-from ai_clip.core.artifacts import write_text_atomic
+from ai_clip.core.artifacts import (
+    artifact_manifest_path,
+    artifact_matches,
+    read_artifact_manifest,
+    write_artifact_manifest,
+    write_text_atomic,
+)
 from ai_clip.core.config import WhisperConfig
 from ai_clip.core.ffmpeg import FFmpegError
 from ai_clip.core.models import TranscriptSegment
@@ -12,6 +18,7 @@ from ai_clip.extract.extractor import transcribe_audio
 from ai_clip.extract.subtitles import parse_vtt
 
 PREFERRED_LANGS = ["zh", "zh-Hans", "zh-CN", "zh-Hant", "en", "en-US", "en-GB"]
+_SCRIPT_CACHE_VERSION = "1"
 
 
 @dataclass(frozen=True)
@@ -56,23 +63,57 @@ def fetch_video_script_report(
 ) -> VideoScriptResult:
     out_dir.mkdir(parents=True, exist_ok=True)
     cached = read_cached_script(out_dir)
-    if cached is not None:
+    cache_path = _script_cache_path(out_dir)
+    cache_inputs = _script_cache_inputs(cookiefile)
+    cache_params = _script_cache_params(url, cached, whisper) if cached else {}
+    manifest_path = artifact_manifest_path(cache_path)
+    if cached is not None and artifact_matches(
+        cache_path,
+        inputs=cache_inputs,
+        params=cache_params,
+    ):
         return VideoScriptResult(
             script=cached,
             status="cached",
             attempts=("cache",),
-            cache_path=str(_script_cache_path(out_dir)),
+            cache_path=str(cache_path),
+        )
+    if cached is not None and cached.source == "subtitles" and not manifest_path.exists():
+        _write_script_manifest(cache_path, cache_inputs, cache_params)
+        return VideoScriptResult(
+            script=cached,
+            status="cached",
+            attempts=("cache",),
+            cache_path=str(cache_path),
         )
 
     attempts: list[str] = ["subtitles"]
     script = fetch_video_subtitles(url, out_dir, cookiefile)
     if script is not None:
-        write_cached_script(out_dir, script)
+        write_cached_script(
+            out_dir,
+            script,
+            url=url,
+            cookiefile=cookiefile,
+            whisper=whisper,
+        )
         return VideoScriptResult(
             script=script,
             status="available",
             attempts=tuple(attempts),
             cache_path=str(_script_cache_path(out_dir)),
+        )
+    if cached is not None and _can_refresh_cached_manifest(
+        cache_path,
+        cache_params,
+    ):
+        attempts.append("cache")
+        _write_script_manifest(cache_path, cache_inputs, cache_params)
+        return VideoScriptResult(
+            script=cached,
+            status="cached",
+            attempts=tuple(attempts),
+            cache_path=str(cache_path),
         )
     if not transcribe_missing or whisper is None:
         error = "subtitles unavailable; transcription disabled"
@@ -85,7 +126,13 @@ def fetch_video_script_report(
         error = "subtitles and audio transcription unavailable"
         write_content_status(out_dir, "missing", error, attempts)
         return VideoScriptResult(script=None, status="missing", error=error, attempts=tuple(attempts))
-    write_cached_script(out_dir, script)
+    write_cached_script(
+        out_dir,
+        script,
+        url=url,
+        cookiefile=cookiefile,
+        whisper=whisper,
+    )
     return VideoScriptResult(
         script=script,
         status="available",
@@ -209,7 +256,14 @@ def read_cached_script(out_dir: Path) -> VideoScript | None:
     )
 
 
-def write_cached_script(out_dir: Path, script: VideoScript) -> None:
+def write_cached_script(
+    out_dir: Path,
+    script: VideoScript,
+    *,
+    url: str = "",
+    cookiefile: str = "",
+    whisper: WhisperConfig | None = None,
+) -> None:
     payload = {
         "text": script.text,
         "language": script.language,
@@ -221,6 +275,12 @@ def write_cached_script(out_dir: Path, script: VideoScript) -> None:
         json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+    if url:
+        _write_script_manifest(
+            _script_cache_path(out_dir),
+            _script_cache_inputs(cookiefile),
+            _script_cache_params(url, script, whisper),
+        )
     write_content_status(out_dir, "available", "", [script.source])
 
 
@@ -238,3 +298,52 @@ def _script_cache_path(out_dir: Path) -> Path:
 
 def _content_status_path(out_dir: Path) -> Path:
     return out_dir / "status.json"
+
+
+def _script_cache_inputs(cookiefile: str) -> list[Path]:
+    if not cookiefile:
+        return []
+    path = Path(cookiefile)
+    return [path] if path.exists() else []
+
+
+def _script_cache_params(
+    url: str,
+    script: VideoScript,
+    whisper: WhisperConfig | None,
+) -> dict[str, str]:
+    params = {
+        "cache_version": _SCRIPT_CACHE_VERSION,
+        "url": url,
+        "source": script.source,
+    }
+    if script.source == "whisper" and whisper is not None:
+        params.update({
+            "whisper_model_size": whisper.model_size,
+            "whisper_compute_type": whisper.compute_type,
+            "whisper_language": whisper.language or "",
+        })
+    return params
+
+
+def _write_script_manifest(
+    cache_path: Path,
+    inputs: list[Path],
+    params: dict[str, str],
+) -> None:
+    write_artifact_manifest(
+        cache_path,
+        stage="source-content",
+        inputs=inputs,
+        params=params,
+    )
+
+
+def _can_refresh_cached_manifest(cache_path: Path, expected_params: dict[str, str]) -> bool:
+    manifest_path = artifact_manifest_path(cache_path)
+    if not manifest_path.exists():
+        return True
+    try:
+        return read_artifact_manifest(cache_path).params == expected_params
+    except (OSError, ValueError, json.JSONDecodeError):
+        return False
