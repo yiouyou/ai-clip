@@ -28,7 +28,8 @@ ai-clip 对外部调用采用“显式允许、有限次数”的重试策略。
 | Tavily | 2/每个 query | 429、408/504、5xx、transport timeout/error | 认证、其他 4xx、非法响应 |
 | MiMo TTS | 2 | 429、408/504、5xx、connect/connect-timeout/pool-timeout | read/write/protocol error、认证、非法响应 |
 | yt-dlp | 由 yt-dlp 配置管理 | 当前 `retries=1`、`extractor_retries=1` | 由采集诊断隔离 |
-| ComfyUI / MoneyPrinter | 1 次提交 | 只轮询已获得的 task/prompt id | POST 提交不重试，避免重复任务 |
+| ComfyUI | 1 次提交 | 预存 caller-assigned prompt id，恢复时继续轮询 | POST 不盲目重放 |
+| MoneyPrinter | 1 次提交 | 获得 server task id 后持久化并恢复轮询 | task id 未知时禁止自动重提 |
 
 MiMo 的 read timeout 特意不重试：服务端可能已经完成生成并计费，只是响应在返回途中断开。
 连接尚未建立、服务明确返回 429/5xx 时才允许有限重放。
@@ -48,6 +49,24 @@ tts:
 
 `source_research.max_searches` 控制一次 research 使用几个不同角度的 query；`max_attempts` 只控制
 同一 query 遇到临时网络错误时最多发送几次，两者不能混用。
+
+## 异步任务恢复
+
+ComfyUI 图片和 MoneyPrinter 视频在输出文件旁写入 `<output>.job.json`，记录请求指纹、远端
+任务 ID 和 `submitting / submitted / running / succeeded / failed / unknown` 状态。相同请求再次
+运行时优先恢复既有任务，不再提交第二份；不同请求不能覆盖仍活动的任务。
+
+ComfyUI 支持客户端预先指定 UUID，所以 ai-clip 在 POST 前即可保存 `prompt_id`。即使提交响应
+丢失，也能用同一个 ID 继续查询 history。明确连接失败或远端执行失败会记为 `failed`；超时、
+轮询中断和暂时无法确认的响应保留为可恢复状态。
+
+MoneyPrinter 的 `task_id` 由服务端在接受请求后生成。如果响应已返回，后续中断可从 sidecar
+恢复轮询和下载；如果响应丢失且尚未获得 ID，状态记为 `unknown`，后续运行会拒绝自动重提。
+此时应先在 MoneyPrinter 服务端确认是否已有任务，确认没有后再删除对应 `.job.json` 重新运行。
+直接删除未确认的 `unknown` 状态可能生成重复任务。
+
+输出采用临时文件后原子替换。ComfyUI 图片已经写入、但资产 manifest 尚未来得及写入时，
+assets 阶段会依据 job sidecar 完成 manifest；清理系统生成的孤儿图片时也会同时清理 sidecar。
 
 ## 使用量
 

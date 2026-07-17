@@ -163,9 +163,12 @@ uv run --extra download pytest -q
 
 ## Optional Backends
 
-- **ComfyUI**: local image generation via `assets.image_provider: comfyui` or `auto`.
+- **ComfyUI**: local image generation via `assets.image_provider: comfyui` or `auto`; a persisted
+  `prompt_id` resumes interrupted jobs without resubmission.
 - **Smart Illustrator**: infographic/thumbnail image provider through `assets.smart_illustrator_*`.
-- **MoneyPrinterTurbo / NarratoAI**: external produce backends for comparison.
+- **MoneyPrinterTurbo / NarratoAI**: external produce backends for comparison. MoneyPrinter resumes
+  polling after receiving a `task_id`; an unknown submission result blocks automatic resubmission and
+  remains in `<output>.job.json` for reconciliation.
 
 ## Cost Accounting
 

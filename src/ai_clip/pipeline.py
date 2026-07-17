@@ -338,6 +338,7 @@ def run_assets(cfg: Config, project: str) -> int:
         record_generated_asset,
         remove_orphaned_generated_assets,
     )
+    from ai_clip.core.async_jobs import async_job_state_path
 
     pp = _paths(cfg, project)
     sb = read_model(pp.storyboard_json, Storyboard)
@@ -348,7 +349,11 @@ def run_assets(cfg: Config, project: str) -> int:
         if not shot.image_file or not shot.image_prompt:
             continue
         out = pp.assets_dir / shot.image_file
-        if out.exists() and not artifact_manifest_path(out).exists():
+        if (
+            out.exists()
+            and not artifact_manifest_path(out).exists()
+            and not async_job_state_path(out).exists()
+        ):
             continue
         provider = resolve_image_provider(cfg.assets, engine=shot.asset_engine)
         params = asset_params(shot, provider)

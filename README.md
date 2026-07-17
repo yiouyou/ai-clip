@@ -161,9 +161,11 @@ uv run --extra download pytest -q
 
 ## 可选后端
 
-- **ComfyUI**: 本地自动出图，配置 `assets.image_provider: comfyui` 或 `auto`。
+- **ComfyUI**: 本地自动出图，配置 `assets.image_provider: comfyui` 或 `auto`；用持久化
+  `prompt_id` 在中断后恢复，不重复提交。
 - **Smart Illustrator**: 信息图/封面风格图片 provider，见配置里的 `assets.smart_illustrator_*`。
-- **MoneyPrinterTurbo / NarratoAI**: 作为外部 produce 后端用于对比效果。
+- **MoneyPrinterTurbo / NarratoAI**: 作为外部 produce 后端用于对比效果。MoneyPrinter 获得
+  `task_id` 后可恢复轮询；提交结果未知时会阻止自动重提并保留 `<output>.job.json`。
 
 ## 成本
 

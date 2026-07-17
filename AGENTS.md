@@ -75,7 +75,9 @@ shortlist，获取脚本后再收敛到最终 Top 3；高事实风险且 Tavily 
   `retries`；重试分类和服务边界在 `core/retry.py`、`docs/reliability.md`。
 - **外部重试**:LLM/Pair 默认最多 3 次、Tavily 2 次；只重试 429/5xx/临时 transport。
   MiMo 只安全重试 connect 类失败和明确失败状态，不重试 read/write/protocol error；ComfyUI、
-  MoneyPrinter 的任务提交没有 idempotency key，禁止套通用 POST 重试。
+  MoneyPrinter 禁止套通用 POST 重试。异步任务状态在 `core/async_jobs.py` 和输出旁
+  `*.job.json`；ComfyUI 预存 caller-assigned prompt id，MoneyPrinter 未取得 task id 的
+  `unknown` 状态必须先人工核对服务端，再决定是否删除 sidecar 重提。
 - **配置/env**:`core/config.py` 先读 `config/default.yaml` 再读 `.env`(内置极简 loader)。
   provider key 按 `llm.base_url` 自动识别(deepseek→`DEEPSEEK_API_KEY`,
   openai→`OPENAI_API_KEY`)。覆盖项:`AICLIP_LLM_BASE_URL`、`AICLIP_LLM_MODEL`、

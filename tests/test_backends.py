@@ -1,7 +1,14 @@
 from pathlib import Path
 
+import httpx
 import pytest
 
+from ai_clip.core.async_jobs import (
+    async_job_request_hash,
+    new_async_job_state,
+    read_async_job_state,
+    write_async_job_state,
+)
 from ai_clip.produce.backends import MoneyPrinterBackend, ProduceSpec
 from ai_clip.produce.backends.moneyprinter import MoneyPrinterError
 
@@ -65,8 +72,122 @@ def test_produce_raises_on_failed_state(monkeypatch, tmp_path):
     monkeypatch.setattr(m.httpx, "post", lambda url, json, timeout: _Resp({"data": {"task_id": "t"}}))
     monkeypatch.setattr(m.httpx, "get", lambda url, timeout: _Resp({"data": {"state": -1}}))
     monkeypatch.setattr(m.time, "sleep", lambda s: None)
+    out = tmp_path / "o.mp4"
     with pytest.raises(MoneyPrinterError):
-        MoneyPrinterBackend("http://x").produce(ProduceSpec(theme="t", out_path=tmp_path / "o.mp4"))
+        MoneyPrinterBackend("http://x").produce(ProduceSpec(theme="t", out_path=out))
+    state = read_async_job_state(out)
+    assert state is not None
+    assert state.status == "failed"
+
+
+def test_produce_resumes_known_task_without_resubmitting(monkeypatch, tmp_path):
+    import ai_clip.produce.backends.moneyprinter as m
+
+    out = tmp_path / "o.mp4"
+    spec = ProduceSpec(theme="t", out_path=out)
+    backend = MoneyPrinterBackend("http://x")
+    body = backend._request_body(spec)
+    state = new_async_job_state(
+        provider=backend.name,
+        request_hash=async_job_request_hash(backend.name, backend.base_url, body),
+        output_path=out,
+        remote_id="existing-task",
+        status="submitted",
+    )
+    write_async_job_state(out, state)
+    monkeypatch.setattr(
+        m.httpx,
+        "post",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not resubmit")),
+    )
+    monkeypatch.setattr(
+        m.httpx,
+        "get",
+        lambda url, timeout: _Resp({"data": {"videos": ["/video.mp4"]}}),
+    )
+
+    class _Stream:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def raise_for_status(self): return None
+        def iter_bytes(self): yield b"RESUMED"
+
+    monkeypatch.setattr(m.httpx, "stream", lambda method, url, timeout: _Stream())
+
+    assert backend.produce(spec).read_bytes() == b"RESUMED"
+    completed = read_async_job_state(out)
+    assert completed is not None
+    assert completed.status == "succeeded"
+
+
+def test_produce_blocks_retry_when_submission_outcome_is_unknown(monkeypatch, tmp_path):
+    import ai_clip.produce.backends.moneyprinter as m
+
+    out = tmp_path / "o.mp4"
+    spec = ProduceSpec(theme="t", out_path=out)
+    calls = 0
+
+    def ambiguous_post(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        raise httpx.ReadTimeout(
+            "response lost",
+            request=httpx.Request("POST", "http://x/api/v1/videos"),
+        )
+
+    monkeypatch.setattr(m.httpx, "post", ambiguous_post)
+    backend = MoneyPrinterBackend("http://x")
+    with pytest.raises(MoneyPrinterError, match="outcome is unknown"):
+        backend.produce(spec)
+    state = read_async_job_state(out)
+    assert state is not None
+    assert state.status == "unknown"
+    assert state.remote_id == ""
+
+    with pytest.raises(MoneyPrinterError, match="verify the server"):
+        backend.produce(spec)
+    assert calls == 1
+
+
+def test_produce_records_connect_timeout_as_safe_failure(monkeypatch, tmp_path):
+    import ai_clip.produce.backends.moneyprinter as m
+
+    out = tmp_path / "o.mp4"
+
+    def connect_timeout(*args, **kwargs):
+        raise httpx.ConnectTimeout(
+            "not connected",
+            request=httpx.Request("POST", "http://x/api/v1/videos"),
+        )
+
+    monkeypatch.setattr(m.httpx, "post", connect_timeout)
+    with pytest.raises(MoneyPrinterError, match="was not submitted"):
+        MoneyPrinterBackend("http://x").produce(ProduceSpec(theme="t", out_path=out))
+    state = read_async_job_state(out)
+    assert state is not None
+    assert state.status == "failed"
+
+
+def test_produce_rejects_changed_request_while_task_is_active(monkeypatch, tmp_path):
+    import ai_clip.produce.backends.moneyprinter as m
+
+    out = tmp_path / "o.mp4"
+    state = new_async_job_state(
+        provider="moneyprinter",
+        request_hash="old-request",
+        output_path=out,
+        remote_id="active-task",
+        status="running",
+    )
+    write_async_job_state(out, state)
+    monkeypatch.setattr(
+        m.httpx,
+        "post",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not resubmit")),
+    )
+
+    with pytest.raises(MoneyPrinterError, match="conflicts"):
+        MoneyPrinterBackend("http://x").produce(ProduceSpec(theme="new", out_path=out))
 
 
 def test_storyboard_to_clip_json_maps_source_spans():

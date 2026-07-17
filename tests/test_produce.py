@@ -2,12 +2,20 @@ import json
 import subprocess
 from pathlib import Path
 
+import httpx
 import pytest
 
 from ai_clip.analyze import analyzer
 from ai_clip.core import llm as llm_mod
 from ai_clip import pipeline
 from ai_clip.core.artifacts import artifact_manifest_path
+from ai_clip.core.async_jobs import (
+    async_job_request_hash,
+    async_job_state_path,
+    new_async_job_state,
+    read_async_job_state,
+    write_async_job_state,
+)
 from ai_clip.core.config import AssetsConfig, Config, LLMConfig
 from ai_clip.core.models import AssetEngine, Shot, Storyboard, Transcript, TranscriptSegment, VideoFormat
 from ai_clip.core.paths import ProjectPaths, write_model
@@ -211,6 +219,211 @@ def test_comfyui_inject_prompt_missing_placeholder():
         provider._inject_prompt("hello")
 
 
+def test_comfyui_persists_client_prompt_id_before_submit(monkeypatch, tmp_path):
+    import ai_clip.produce.assets.comfyui as comfy
+
+    template = {"6": {"inputs": {"text": "AICLIP_PROMPT"}}}
+    provider = ComfyUIProvider("http://x", template)
+    shot = Shot(index=1, image_prompt="hello", image_file="shot_01.png")
+    out = tmp_path / shot.image_file
+
+    def fake_post(url, json, timeout):
+        state = read_async_job_state(out)
+        assert state is not None
+        assert state.status == "submitting"
+        assert json["prompt_id"] == state.remote_id
+        return httpx.Response(
+            200,
+            json={"prompt_id": state.remote_id},
+            request=httpx.Request("POST", url),
+        )
+
+    def fake_get(url, **kwargs):
+        if "/history/" in url:
+            prompt_id = url.rsplit("/", 1)[-1]
+            payload = {
+                prompt_id: {"outputs": {"9": {"images": [{"filename": "out.png"}]}}}
+            }
+            return httpx.Response(200, json=payload, request=httpx.Request("GET", url))
+        return httpx.Response(200, content=b"PNG", request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(comfy.httpx, "post", fake_post)
+    monkeypatch.setattr(comfy.httpx, "get", fake_get)
+
+    assert provider.generate(shot, tmp_path).read_bytes() == b"PNG"
+    state = read_async_job_state(out)
+    assert state is not None
+    assert state.status == "succeeded"
+
+
+def test_comfyui_resumes_known_prompt_without_resubmitting(monkeypatch, tmp_path):
+    import ai_clip.produce.assets.comfyui as comfy
+
+    template = {"6": {"inputs": {"text": "AICLIP_PROMPT"}}}
+    provider = ComfyUIProvider("http://x", template)
+    shot = Shot(index=1, image_prompt="hello", image_file="shot_01.png")
+    out = tmp_path / shot.image_file
+    graph = provider._inject_prompt(shot.image_prompt)
+    state = new_async_job_state(
+        provider=provider.name,
+        request_hash=async_job_request_hash(provider.name, provider.base_url, {"prompt": graph}),
+        output_path=out,
+        remote_id="00000000-0000-0000-0000-000000000001",
+        status="submitted",
+    )
+    write_async_job_state(out, state)
+    monkeypatch.setattr(
+        comfy.httpx,
+        "post",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not resubmit")),
+    )
+
+    def fake_get(url, **kwargs):
+        if "/history/" in url:
+            payload = {
+                state.remote_id: {
+                    "outputs": {"9": {"images": [{"filename": "out.png"}]}}
+                }
+            }
+            return httpx.Response(200, json=payload, request=httpx.Request("GET", url))
+        return httpx.Response(200, content=b"RESUMED", request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(comfy.httpx, "get", fake_get)
+
+    assert provider.generate(shot, tmp_path).read_bytes() == b"RESUMED"
+
+
+def test_comfyui_rejects_changed_request_while_job_is_active(monkeypatch, tmp_path):
+    import ai_clip.produce.assets.comfyui as comfy
+
+    template = {"6": {"inputs": {"text": "AICLIP_PROMPT"}}}
+    provider = ComfyUIProvider("http://x", template)
+    out = tmp_path / "shot_01.png"
+    state = new_async_job_state(
+        provider=provider.name,
+        request_hash="old-request",
+        output_path=out,
+        remote_id="00000000-0000-0000-0000-000000000001",
+        status="running",
+    )
+    write_async_job_state(out, state)
+    monkeypatch.setattr(
+        comfy.httpx,
+        "post",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not resubmit")),
+    )
+
+    with pytest.raises(ComfyUIError, match="conflicts"):
+        provider.generate(
+            Shot(index=1, image_prompt="new", image_file=out.name),
+            tmp_path,
+        )
+
+
+def test_comfyui_recovers_after_submission_response_is_lost(monkeypatch, tmp_path):
+    import ai_clip.produce.assets.comfyui as comfy
+
+    template = {"6": {"inputs": {"text": "AICLIP_PROMPT"}}}
+    provider = ComfyUIProvider("http://x", template)
+    shot = Shot(index=1, image_prompt="hello", image_file="shot_01.png")
+    out = tmp_path / shot.image_file
+
+    def fake_post(url, json, timeout):
+        raise httpx.ReadTimeout("response lost", request=httpx.Request("POST", url))
+
+    def fake_get(url, **kwargs):
+        if "/history/" in url:
+            state = read_async_job_state(out)
+            assert state is not None
+            assert state.status == "unknown"
+            payload = {
+                state.remote_id: {
+                    "outputs": {"9": {"images": [{"filename": "out.png"}]}}
+                }
+            }
+            return httpx.Response(200, json=payload, request=httpx.Request("GET", url))
+        return httpx.Response(200, content=b"RECOVERED", request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(comfy.httpx, "post", fake_post)
+    monkeypatch.setattr(comfy.httpx, "get", fake_get)
+
+    assert provider.generate(shot, tmp_path).read_bytes() == b"RECOVERED"
+    state = read_async_job_state(out)
+    assert state is not None
+    assert state.status == "succeeded"
+
+
+def test_comfyui_records_remote_failure(monkeypatch, tmp_path):
+    import ai_clip.produce.assets.comfyui as comfy
+
+    template = {"6": {"inputs": {"text": "AICLIP_PROMPT"}}}
+    provider = ComfyUIProvider("http://x", template)
+    shot = Shot(index=1, image_prompt="hello", image_file="shot_01.png")
+    out = tmp_path / shot.image_file
+
+    def fake_post(url, json, timeout):
+        return httpx.Response(
+            200,
+            json={"prompt_id": json["prompt_id"]},
+            request=httpx.Request("POST", url),
+        )
+
+    def fake_get(url, **kwargs):
+        prompt_id = url.rsplit("/", 1)[-1]
+        payload = {prompt_id: {"outputs": {}, "status": {"status_str": "error"}}}
+        return httpx.Response(200, json=payload, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(comfy.httpx, "post", fake_post)
+    monkeypatch.setattr(comfy.httpx, "get", fake_get)
+
+    with pytest.raises(ComfyUIError, match="failed"):
+        provider.generate(shot, tmp_path)
+    state = read_async_job_state(out)
+    assert state is not None
+    assert state.status == "failed"
+
+
+def test_run_assets_recovers_output_written_before_manifest(monkeypatch, tmp_path):
+    cfg = Config(data_dir=str(tmp_path))
+    paths = ProjectPaths(tmp_path, "demo")
+    paths.ensure()
+    out = paths.assets_dir / "shot_01.png"
+    out.write_bytes(b"generated")
+    state = new_async_job_state(
+        provider="fake",
+        request_hash="request",
+        output_path=out,
+        remote_id="remote",
+        status="succeeded",
+    )
+    write_async_job_state(out, state)
+    write_model(
+        paths.storyboard_json,
+        Storyboard(
+            project="demo",
+            shots=[Shot(index=1, image_file=out.name, image_prompt="a")],
+        ),
+    )
+
+    class FakeProvider:
+        name = "fake"
+
+        def cache_params(self):
+            return {"provider": self.name}
+
+        def generate(self, shot, assets_dir):
+            return assets_dir / shot.image_file
+
+    monkeypatch.setattr(
+        "ai_clip.produce.assets.factory.resolve_image_provider",
+        lambda *a, **k: FakeProvider(),
+    )
+
+    assert pipeline.run_assets(cfg, "demo") == 1
+    assert artifact_manifest_path(out).exists()
+    assert async_job_state_path(out).exists()
+
+
 def test_run_assets_reuses_matching_generation_and_refreshes_changed_prompt(
     monkeypatch,
     tmp_path,
@@ -275,9 +488,20 @@ def test_run_assets_preserves_human_files_and_removes_generated_orphans(monkeypa
     generated = paths.assets_dir / "shot_02.png"
     generated.write_bytes(b"generated")
     record_generated_asset(generated, {"provider": "fake"})
+    write_async_job_state(
+        generated,
+        new_async_job_state(
+            provider="fake",
+            request_hash="request",
+            output_path=generated,
+            remote_id="remote",
+            status="succeeded",
+        ),
+    )
     write_model(paths.storyboard_json, Storyboard(project="demo", shots=[]))
     pipeline.run_assets(cfg, "demo")
 
     assert human.exists()
     assert not generated.exists()
     assert not artifact_manifest_path(generated).exists()
+    assert not async_job_state_path(generated).exists()

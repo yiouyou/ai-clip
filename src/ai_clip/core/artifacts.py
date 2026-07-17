@@ -53,6 +53,16 @@ def write_text_atomic(path: Path, content: str, encoding: str = "utf-8") -> None
     tmp.replace(path)
 
 
+def write_bytes_atomic(path: Path, content: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        tmp.write_bytes(content)
+        tmp.replace(path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 def write_json_atomic(path: Path, data: Any, indent: int = 2) -> None:
     write_text_atomic(path, json.dumps(data, ensure_ascii=False, indent=indent), encoding="utf-8")
 

@@ -8,6 +8,7 @@ from ai_clip.core.artifacts import (
     read_artifact_manifest,
     write_artifact_manifest,
 )
+from ai_clip.core.async_jobs import async_job_state_path
 from ai_clip.core.models import Shot
 from ai_clip.produce.assets.base import ImageProvider
 
@@ -24,7 +25,7 @@ def asset_needs_generation(path: Path, params: dict[str, str]) -> bool:
     if not path.exists():
         return True
     if not artifact_manifest_path(path).exists():
-        return False
+        return async_job_state_path(path).exists()
     return not artifact_matches(path, params=params)
 
 
@@ -48,5 +49,6 @@ def remove_orphaned_generated_assets(assets_dir: Path, expected: set[str]) -> li
             continue
         path.unlink(missing_ok=True)
         manifest_path.unlink(missing_ok=True)
+        async_job_state_path(path).unlink(missing_ok=True)
         removed.append(path)
     return removed
