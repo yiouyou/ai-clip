@@ -7,7 +7,12 @@ import pytest
 
 from ai_clip.core.ffmpeg import probe_duration, run
 from ai_clip.core.models import Shot, Storyboard
-from ai_clip.produce.assemble import MissingAssetsError, assemble, check_assets
+from ai_clip.produce.assemble import (
+    MissingAssetsError,
+    _atempo_filters,
+    assemble,
+    check_assets,
+)
 
 ffmpeg_available = shutil.which("ffmpeg") is not None
 pytestmark = pytest.mark.skipif(not ffmpeg_available, reason="ffmpeg not on PATH")
@@ -95,6 +100,44 @@ def test_assemble_remix_requires_source(tmp_path: Path):
     assets.mkdir()
     with pytest.raises(MissingAssetsError):
         assemble(sb, assets, tmp_path / "out.mp4", source_video=None)
+
+
+def test_atempo_filters_split_large_speedup():
+    assert _atempo_filters(4.5) == ["atempo=2", "atempo=2", "atempo=1.125000"]
+
+
+def test_assemble_remix_fits_long_voiceover_to_source_span(tmp_path: Path):
+    source = tmp_path / "source.mp4"
+    _make_source_video(source, 4.0)
+    sb = Storyboard(
+        project="t",
+        format="remix",
+        aspect_ratio="9:16",
+        shots=[
+            Shot(
+                index=1,
+                duration_sec=2.0,
+                source_start=0.0,
+                source_end=2.0,
+                voiceover="long narration",
+            )
+        ],
+    )
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    voice = tmp_path / "voice"
+    voice.mkdir()
+    _make_wav(voice / "shot_01.wav", 4.0)
+
+    out = assemble(
+        sb,
+        assets,
+        tmp_path / "out.mp4",
+        voice_dir=voice,
+        source_video=source,
+    )
+
+    assert 1.8 <= probe_duration(out) <= 2.3
 
 
 def _make_wav(path: Path, seconds: float):

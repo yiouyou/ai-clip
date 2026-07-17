@@ -11,6 +11,7 @@ PROMPT_VERSIONS = {
     "analyze": "1",
     "research": "1",
     "storyboard": "1",
+    "storyboard_remix": "2",
     "source_draft": "1",
 }
 

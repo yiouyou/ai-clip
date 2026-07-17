@@ -114,6 +114,7 @@ def test_slideshow_format(monkeypatch):
         "demo", "技巧", LLMConfig(api_key="x"), fmt=VideoFormat.slideshow
     )
     assert sb.format == VideoFormat.slideshow
+    assert sb.target_duration_sec == 30.0
     assert sb.shots[0].caption == "第一招"
     assert sb.shots[0].image_file == "shot_01.png"
 
@@ -132,6 +133,7 @@ def test_remix_format_clamps_and_drops(monkeypatch):
         fmt=VideoFormat.remix, transcript=transcript,
     )
     assert sb.format == VideoFormat.remix
+    assert sb.target_duration_sec == 10.0
     assert len(sb.shots) == 2  # zero-length span dropped
     assert sb.shots[0].is_source_segment
     assert sb.shots[0].expected_files() == []  # remix needs no generated assets
@@ -143,6 +145,54 @@ def test_remix_requires_transcript(monkeypatch):
     with pytest.raises(ValueError):
         sb_mod.generate_storyboard(
             "demo", "x", LLMConfig(api_key="x"), fmt=VideoFormat.remix
+        )
+
+
+def test_remix_proportionally_caps_spans_to_target_duration(monkeypatch):
+    reply = json.dumps(
+        {
+            "spans": [
+                {"source_start": 0, "source_end": 20, "voiceover": "hook"},
+                {"source_start": 30, "source_end": 50, "voiceover": "middle"},
+                {"source_start": 60, "source_end": 80, "voiceover": "ending"},
+            ]
+        }
+    )
+    monkeypatch.setattr(llm_mod, "chat", lambda *a, **k: reply)
+    transcript = Transcript(
+        clip_id="c1",
+        segments=[TranscriptSegment(start=0.0, end=100.0, text="source")],
+    )
+
+    sb = sb_mod.generate_storyboard(
+        "demo",
+        "盘点",
+        LLMConfig(api_key="x"),
+        fmt=VideoFormat.remix,
+        transcript=transcript,
+        duration_sec=30.0,
+    )
+
+    assert sum(shot.duration_sec for shot in sb.shots) == pytest.approx(30.0)
+    assert [shot.source_start for shot in sb.shots] == [0.0, 30.0, 60.0]
+    assert [shot.source_end for shot in sb.shots] == [10.0, 40.0, 70.0]
+
+
+def test_remix_rejects_non_positive_duration(monkeypatch):
+    monkeypatch.setattr(llm_mod, "chat", lambda *a, **k: _REMIX_REPLY)
+    transcript = Transcript(
+        clip_id="c1",
+        segments=[TranscriptSegment(start=0.0, end=10.0, text="source")],
+    )
+
+    with pytest.raises(ValueError, match="duration"):
+        sb_mod.generate_storyboard(
+            "demo",
+            "盘点",
+            LLMConfig(api_key="x"),
+            fmt=VideoFormat.remix,
+            transcript=transcript,
+            duration_sec=0,
         )
 
 

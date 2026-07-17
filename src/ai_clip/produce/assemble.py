@@ -13,7 +13,7 @@ import tempfile
 from pathlib import Path
 
 from ai_clip.core.ffmpeg import ensure_ffmpeg, probe_duration, run
-from ai_clip.core.models import Shot, Storyboard
+from ai_clip.core.models import Shot, Storyboard, VideoFormat
 from ai_clip.produce.captions import (
     drawtext_filter,
     prepare_font,
@@ -71,7 +71,15 @@ def assemble(
         font_name = prepare_font(tmpdir) if burn_captions else None
         segments = [
             _normalize_shot(
-                shot, assets_dir, tmpdir, w, h, voice_dir, source_video, font_name
+                shot,
+                assets_dir,
+                tmpdir,
+                w,
+                h,
+                voice_dir,
+                source_video,
+                font_name,
+                constrain_voice=sb.format == VideoFormat.remix,
             )
             for shot in sb.shots
         ]
@@ -86,11 +94,22 @@ def assemble(
     return out_path
 
 
-def _shot_duration(shot: Shot, voice_path: Path | None) -> float:
+def _shot_duration(shot: Shot, voice_duration: float, constrain_voice: bool) -> float:
     """A shot lasts at least its configured length, extended to fit narration."""
-    if voice_path and voice_path.exists():
-        return max(shot.duration_sec, probe_duration(voice_path))
+    if voice_duration and not constrain_voice:
+        return max(shot.duration_sec, voice_duration)
     return shot.duration_sec
+
+
+def _atempo_filters(speed: float) -> list[str]:
+    """Build portable FFmpeg atempo factors, each within the traditional 0.5-2 range."""
+    filters = []
+    while speed > 2.0:
+        filters.append("atempo=2")
+        speed /= 2.0
+    if speed > 1.0005:
+        filters.append(f"atempo={speed:.6f}")
+    return filters
 
 
 def _normalize_shot(
@@ -102,6 +121,7 @@ def _normalize_shot(
     voice_dir: Path | None,
     source_video: Path | None = None,
     font_name: str | None = None,
+    constrain_voice: bool = False,
 ) -> Path:
     seg = tmpdir / f"seg_{shot.index:02d}.mp4"
     vf = (
@@ -113,7 +133,12 @@ def _normalize_shot(
         (tmpdir / text_name).write_text(wrap_text(shot_text(shot)), encoding="utf-8")
         vf = f"{vf},{drawtext_filter(font_name, text_name, w)}"
     voice_path = (voice_dir / f"shot_{shot.index:02d}.wav") if voice_dir else None
-    duration = _shot_duration(shot, voice_path)
+    voice_duration = (
+        probe_duration(voice_path)
+        if voice_path and voice_path.exists()
+        else 0.0
+    )
+    duration = _shot_duration(shot, voice_duration, constrain_voice)
 
     video = assets_dir / shot.video_file if shot.video_file else None
     image = assets_dir / shot.image_file if shot.image_file else None
@@ -134,7 +159,20 @@ def _normalize_shot(
 
     if voice_path and voice_path.exists():
         # Narration track; pad with silence so the shot reaches `duration`.
-        args += ["-i", str(voice_path), "-map", "0:v:0", "-map", "1:a:0", "-af", "apad"]
+        audio_filters = []
+        if constrain_voice and duration > 0 and voice_duration > duration:
+            audio_filters.extend(_atempo_filters(voice_duration / duration))
+        audio_filters.append("apad")
+        args += [
+            "-i",
+            str(voice_path),
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-af",
+            ",".join(audio_filters),
+        ]
     elif shot.is_source_segment:
         # Keep the source clip's own audio.
         args += ["-map", "0:v:0", "-map", "0:a:0?"]

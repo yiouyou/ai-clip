@@ -161,4 +161,5 @@ class Storyboard(BaseModel):
     theme: str = ""
     source_clip_id: str | None = None
     aspect_ratio: str = "9:16"
+    target_duration_sec: float = 0.0
     shots: list[Shot] = Field(default_factory=list)

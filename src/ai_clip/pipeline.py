@@ -259,7 +259,9 @@ def run_storyboard(
         "intent": intent.value,
         "duration_sec": str(duration_sec),
         "n_shots": str(n_shots),
-        "prompt_version": _PROMPT_VERSIONS["storyboard"],
+        "prompt_version": _PROMPT_VERSIONS[
+            "storyboard_remix" if fmt == VideoFormat.remix else "storyboard"
+        ],
         "research_used": str(bool(research_path)),
         "source_context_used": str(use_source_context),
     }

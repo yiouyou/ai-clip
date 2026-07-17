@@ -45,5 +45,5 @@ def generate(args: GenerateArgs) -> Storyboard:
     return Storyboard(
         project=args.project, format=VideoFormat.talking_head, theme=args.theme,
         source_clip_id=args.analysis.clip_id if args.analysis else None,
-        aspect_ratio=args.aspect_ratio, shots=shots,
+        aspect_ratio=args.aspect_ratio, target_duration_sec=args.duration_sec, shots=shots,
     )

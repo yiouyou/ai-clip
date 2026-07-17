@@ -82,7 +82,10 @@ Pick about {n_shots} of the BEST moments — the strongest hook, most quotable l
 sharpest opinions, conflicts, surprises or emotional peaks — spread across the WHOLE
 video (not just the opening). Keep each span SHORT (about 3-8 seconds) and
 non-contiguous. The first span must be a scroll-stopping hook. The kept spans should
-together sum to roughly {duration} seconds.
+together sum to roughly {duration} seconds and MUST NOT exceed {duration} seconds.
+Each new narration replaces the span's audio and MUST fit inside that span at a natural
+speaking pace. Use at most roughly 3 Chinese characters or 2 English words per second;
+prefer one sharp sentence over a dense explanation.
 {intent}
 {formula}
 {research}
