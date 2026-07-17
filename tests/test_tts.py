@@ -2,12 +2,14 @@ import base64
 import shutil
 from pathlib import Path
 
+import httpx
 import pytest
 
 from ai_clip.core.config import TTSConfig, load_config
 from ai_clip.core.models import Shot, Storyboard
 from ai_clip.produce.tts import mimo
 from ai_clip.produce.tts.mimo import MimoTTS, TTSError
+from ai_clip.core.retry import FailureCategory
 from ai_clip.produce.voiceover import build_mimo, generate_voiceover, voice_filename
 
 ffmpeg_available = shutil.which("ffmpeg") is not None
@@ -75,6 +77,42 @@ def test_mimo_clone_builds_data_uri(monkeypatch, tmp_path: Path):
     )
     tts.synthesize("line", tmp_path / "v.wav")
     assert captured["voice"].startswith("data:audio/mpeg;base64,")
+
+
+def test_mimo_retries_connection_failure(monkeypatch, tmp_path: Path):
+    calls = []
+
+    def fake_post(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise httpx.ConnectError("not connected")
+        return _FakeResp(_fake_audio_payload("line"))
+
+    monkeypatch.setattr(mimo.httpx, "post", fake_post)
+    monkeypatch.setattr("ai_clip.core.retry.time.sleep", lambda _: None)
+    tts = MimoTTS(TTSConfig(api_key="k", model="mimo-v2.5-tts", max_attempts=2))
+
+    out = tts.synthesize("line", tmp_path / "retry.wav")
+
+    assert out.read_bytes() == b"WAV::line"
+    assert len(calls) == 2
+
+
+def test_mimo_does_not_retry_ambiguous_read_timeout(monkeypatch, tmp_path: Path):
+    calls = []
+
+    def fake_post(*args, **kwargs):
+        calls.append(1)
+        raise httpx.ReadTimeout("response interrupted")
+
+    monkeypatch.setattr(mimo.httpx, "post", fake_post)
+    tts = MimoTTS(TTSConfig(api_key="k", model="mimo-v2.5-tts", max_attempts=2))
+
+    with pytest.raises(TTSError) as caught:
+        tts.synthesize("line", tmp_path / "ambiguous.wav")
+
+    assert len(calls) == 1
+    assert caught.value.category == FailureCategory.TERMINAL
 
 
 def test_generate_voiceover_skips_empty(tmp_path: Path):

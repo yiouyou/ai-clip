@@ -71,7 +71,11 @@ shortlist，获取脚本后再收敛到最终 Top 3；高事实风险且 Tavily 
   否则不发 `temperature`(GPT-5 系列拒绝自定义值)。
 - **计费**:`core/billing.py` 通过 `account(project_dir, stage)` contextvar 把每次
   LLM/TTS 调用追加到 `data/<project>/cost.jsonl`;`ai-clip cost -p P` 汇总。价格是 USD
-  可编辑表;MiMo TTS 价格是未确认的估算。
+  可编辑表;MiMo TTS 价格是未确认的估算。成功逻辑调用记录 `attempts`，run usage 汇总
+  `retries`；重试分类和服务边界在 `core/retry.py`、`docs/reliability.md`。
+- **外部重试**:LLM/Pair 默认最多 3 次、Tavily 2 次；只重试 429/5xx/临时 transport。
+  MiMo 只安全重试 connect 类失败和明确失败状态，不重试 read/write/protocol error；ComfyUI、
+  MoneyPrinter 的任务提交没有 idempotency key，禁止套通用 POST 重试。
 - **配置/env**:`core/config.py` 先读 `config/default.yaml` 再读 `.env`(内置极简 loader)。
   provider key 按 `llm.base_url` 自动识别(deepseek→`DEEPSEEK_API_KEY`,
   openai→`OPENAI_API_KEY`)。覆盖项:`AICLIP_LLM_BASE_URL`、`AICLIP_LLM_MODEL`、
@@ -86,7 +90,7 @@ uv venv --python 3.12
 uv pip install -e ".[dev]"                      # 核心 + 测试
 uv pip install -e ".[download,extract]"         # 运行时重依赖(yt-dlp、faster-whisper)
 ruff check src tests        # lint(必须通过)
-pytest -q                   # 235 个测试,须保持全绿
+pytest -q                   # 245 个测试,须保持全绿
 ```
 需要 PATH 上有 **ffmpeg + ffprobe**。开发机的 `.env` 已配:`DEEPSEEK_API_KEY`、
 `OPENAI_API_KEY`、`GEMINI_API_KEY`、`MIMO_API_KEY`、`PEXELS_API_KEY`、`TAVILY_API_KEY`。

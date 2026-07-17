@@ -15,12 +15,18 @@ import httpx
 
 from ai_clip.core.config import TTSConfig
 from ai_clip.core.ffmpeg import ensure_ffmpeg, run
+from ai_clip.core.retry import (
+    ExternalCallError,
+    FailureCategory,
+    RetryPolicy,
+    run_with_retry,
+)
 
 _CLONE_MODEL = "mimo-v2.5-tts-voiceclone"
 _MAX_B64_BYTES = 10 * 1024 * 1024
 
 
-class TTSError(RuntimeError):
+class TTSError(ExternalCallError):
     pass
 
 
@@ -51,7 +57,12 @@ class MimoTTS:
 
     def __init__(self, cfg: TTSConfig, reference_path: str | Path | None = None):
         if not cfg.api_key:
-            raise TTSError("MIMO_API_KEY is empty; set it in your .env")
+            raise TTSError(
+                "MIMO_API_KEY is empty; set it in your .env",
+                service="mimo",
+                operation="configure",
+                category=FailureCategory.CONFIGURATION,
+            )
         self.cfg = cfg
         self.reference_path = reference_path
 
@@ -74,20 +85,38 @@ class MimoTTS:
             "audio": {"format": "wav", "voice": self._voice()},
             "stream": False,
         }
-        resp = httpx.post(
-            f"{self.cfg.base_url.rstrip('/')}/chat/completions",
-            headers={"api-key": self.cfg.api_key, "Content-Type": "application/json"},
-            json=payload,
-            timeout=180.0,
+        def request() -> bytes:
+            resp = httpx.post(
+                f"{self.cfg.base_url.rstrip('/')}/chat/completions",
+                headers={"api-key": self.cfg.api_key, "Content-Type": "application/json"},
+                json=payload,
+                timeout=180.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()["choices"][0]["message"]["audio"]["data"]
+            return base64.b64decode(data, validate=True)
+
+        outcome = run_with_retry(
+            request,
+            service="mimo",
+            operation_name="synthesize",
+            policy=RetryPolicy(
+                max_attempts=self.cfg.max_attempts,
+                retry_categories=frozenset({
+                    FailureCategory.RATE_LIMIT,
+                    FailureCategory.TIMEOUT,
+                    FailureCategory.TRANSIENT,
+                }),
+            ),
+            error_type=TTSError,
+            retry_ambiguous_transport=False,
         )
-        resp.raise_for_status()
-        data = resp.json()["choices"][0]["message"]["audio"]["data"]
 
         out = Path(out_path)
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_bytes(base64.b64decode(data))
+        out.write_bytes(outcome.value)
 
         from ai_clip.core import billing  # noqa: PLC0415
 
-        billing.record_tts("mimo", len(text))
+        billing.record_tts("mimo", len(text), attempts=outcome.attempts)
         return out

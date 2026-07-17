@@ -30,6 +30,7 @@ class LLMConfig(StrictConfigModel):
     model: str = "deepseek-v4-pro"
     # Omitted from the request when None (GPT-5 line rejects non-default values).
     temperature: float | None = None
+    max_attempts: int = Field(default=3, ge=1, le=5)
 
 
 class AssetsConfig(StrictConfigModel):
@@ -52,6 +53,7 @@ class TTSConfig(StrictConfigModel):
     voice: str = "Chloe"  # preset voice id, used when not cloning
     clone_from_source: bool = True  # clone the source clip's speaker by default
     reference_seconds: float = Field(default=10.0, gt=0)  # reference snippet length
+    max_attempts: int = Field(default=2, ge=1, le=3)
 
 
 class ProduceConfig(StrictConfigModel):
@@ -72,6 +74,7 @@ class PairConfig(StrictConfigModel):
     deepseek_api_key: str = ""
     deepseek_models: list[str] = Field(default_factory=lambda: ["deepseek-4-pro"])
     timeout: float = Field(default=120.0, gt=0)
+    max_attempts: int = Field(default=3, ge=1, le=5)
 
 
 class SourceResearchConfig(StrictConfigModel):
@@ -80,6 +83,7 @@ class SourceResearchConfig(StrictConfigModel):
     max_results: int = Field(default=5, ge=1)
     search_depth: str = "basic"
     timeout: float = Field(default=30.0, gt=0)
+    max_attempts: int = Field(default=2, ge=1, le=3)
 
 
 class RadarConfig(StrictConfigModel):

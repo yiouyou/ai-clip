@@ -53,6 +53,8 @@ ai-clip status -p demo --json
 JSON 输出统一使用 `schema_version / command / status / result` envelope。`result` 包含
 `research/storyboard/source_draft` 的 freshness、review/rewrite/verify 链、分镜镜头数、
 缺失素材、运行状态和本次 API usage。
+usage 的 `calls` 表示成功的逻辑调用，`attempts/retries` 额外反映有限网络重试；终止错误会在
+阶段 `error` 中包含标准化 category 和 attempts。详细策略见 [外部调用可靠性](reliability.md)。
 
 ## 组合 workflow
 

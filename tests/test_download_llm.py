@@ -1,6 +1,8 @@
+import httpx
 import pytest
 
 from ai_clip.core import llm as llm_mod
+from ai_clip.core import billing
 from ai_clip.core.config import LLMConfig
 from ai_clip.core.models import Platform
 from ai_clip.download.downloader import detect_platform, make_clip_id
@@ -40,6 +42,47 @@ def test_extract_json_error():
         llm_mod.extract_json("no json here")
 
 
+def test_extract_json_rejects_malformed_object_with_category():
+    with pytest.raises(llm_mod.LLMError) as caught:
+        llm_mod.extract_json('{"broken": }')
+
+    assert caught.value.category.value == "invalid_response"
+
+
 def test_chat_requires_key():
     with pytest.raises(llm_mod.LLMError):
         llm_mod.chat(LLMConfig(api_key=""), "s", "u")
+
+
+def test_chat_retries_rate_limit_and_records_attempts(monkeypatch, tmp_path):
+    calls = []
+
+    def fake_post(url, **kwargs):
+        request = httpx.Request("POST", url)
+        calls.append(1)
+        if len(calls) == 1:
+            return httpx.Response(429, request=request)
+        return httpx.Response(
+            200,
+            request=request,
+            json={
+                "choices": [{"message": {"content": "ok"}}],
+                "usage": {"prompt_tokens": 2, "completion_tokens": 3},
+            },
+        )
+
+    monkeypatch.setattr(llm_mod.httpx, "post", fake_post)
+    monkeypatch.setattr("ai_clip.core.retry.time.sleep", lambda _: None)
+    with billing.account(tmp_path, "test"):
+        result = llm_mod.chat(
+            LLMConfig(api_key="key", model="test", max_attempts=2),
+            "system",
+            "user",
+        )
+
+    assert result == "ok"
+    assert len(calls) == 2
+    usage = billing.summarize(tmp_path)
+    assert usage["total"]["calls"] == 1
+    assert usage["total"]["attempts"] == 2
+    assert usage["total"]["retries"] == 1

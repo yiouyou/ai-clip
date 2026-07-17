@@ -17,6 +17,7 @@ Detailed docs:
 - [Research](docs/research.md)
 - [Daily Radar](docs/radar.md)
 - [Pair Review](docs/pair-review.md)
+- [External-call reliability](docs/reliability.md)
 
 ## Principles
 

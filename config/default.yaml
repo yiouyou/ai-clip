@@ -12,6 +12,7 @@ whisper:
 llm:
   base_url: https://api.deepseek.com/v1   # full base incl. /v1
   model: deepseek-v4-pro                    # OpenAI: https://api.openai.com/v1 + gpt-5.5
+  max_attempts: 3                           # 429/5xx/transport total attempts, max 5
 
 assets:
   image_provider: auto        # auto|comfyui|smart_illustrator|prompt_only
@@ -29,6 +30,7 @@ tts:
   voice: Chloe                       # preset voice (used when not cloning)
   clone_from_source: true            # clone the source clip's speaker
   reference_seconds: 10.0            # reference snippet length for cloning
+  max_attempts: 2                     # safe retries only; ambiguous read timeout is not replayed
 
 pair:
   base_url: ""     # set from NEWAPP_URL; OpenAI-compatible base should include /v1
@@ -42,6 +44,7 @@ pair:
   deepseek_models:
     - deepseek-4-pro
   timeout: 120.0
+  max_attempts: 3
 
 source_research:
   tavily_api_key: ""  # set from TAVILY_API_KEY
@@ -49,6 +52,7 @@ source_research:
   max_results: 5
   search_depth: basic
   timeout: 30.0
+  max_attempts: 2  # per query, separate from max_searches
 
 radar:
   channels_path: config/channels.yaml

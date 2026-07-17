@@ -19,17 +19,19 @@ def test_record_noop_without_context(tmp_path):
 
 def test_account_records_and_summarizes(tmp_path):
     with billing.account(tmp_path, "analyze"):
-        billing.record_llm("deepseek-v4-pro", 1_000_000, 1_000_000)
+        billing.record_llm("deepseek-v4-pro", 1_000_000, 1_000_000, attempts=2)
     with billing.account(tmp_path, "voiceover"):
         billing.record_tts("mimo", 500)
     with billing.account(tmp_path, "source_research"):
-        billing.record_search("tavily", "query", 3)
+        billing.record_search("tavily", "query", 3, attempts=3)
 
     s = billing.summarize(tmp_path)
     assert s["total"]["calls"] == 3
     assert s["total"]["searches"] == 1
     assert s["total"]["input_tokens"] == 1_000_000
     assert s["total"]["chars"] == 500
+    assert s["total"]["attempts"] == 6
+    assert s["total"]["retries"] == 3
     # 0.435 + 0.87 = 1.305 for the llm call
     assert round(s["by_stage"]["analyze"], 4) == 1.305
     assert "deepseek-v4-pro" in s["by_model"]

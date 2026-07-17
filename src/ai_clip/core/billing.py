@@ -66,27 +66,36 @@ def _append(item: dict) -> None:
         f.write(json.dumps(item, ensure_ascii=False) + "\n")
 
 
-def record_llm(model: str, input_tokens: int, output_tokens: int) -> None:
+def record_llm(
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    *,
+    attempts: int = 1,
+) -> None:
     _append({
         "kind": "llm", "model": model,
         "input_tokens": input_tokens, "output_tokens": output_tokens,
+        "attempts": attempts,
         "cost": round(llm_cost(model, input_tokens, output_tokens), 6),
     })
 
 
-def record_tts(provider: str, chars: int) -> None:
+def record_tts(provider: str, chars: int, *, attempts: int = 1) -> None:
     _append({
         "kind": "tts", "model": provider, "chars": chars,
+        "attempts": attempts,
         "cost": round(tts_cost(provider, chars), 6),
     })
 
 
-def record_search(provider: str, query: str, results: int) -> None:
+def record_search(provider: str, query: str, results: int, *, attempts: int = 1) -> None:
     _append({
         "kind": "search",
         "model": provider,
         "query": query,
         "results": results,
+        "attempts": attempts,
         "cost": 0.0,
     })
 
@@ -104,6 +113,8 @@ def summarize(project_dir: str | Path, since: str | float | None = None) -> dict
         "chars": 0,
         "calls": 0,
         "searches": 0,
+        "attempts": 0,
+        "retries": 0,
     }
     if not path.exists():
         return {
@@ -130,6 +141,12 @@ def summarize(project_dir: str | Path, since: str | float | None = None) -> dict
         totals["output_tokens"] += it.get("output_tokens", 0)
         totals["chars"] += it.get("chars", 0)
         totals["calls"] += 1
+        try:
+            attempts = max(int(it.get("attempts", 1)), 1)
+        except (TypeError, ValueError):
+            attempts = 1
+        totals["attempts"] += attempts
+        totals["retries"] += attempts - 1
         kind = str(it.get("kind") or "unknown")
         by_kind[kind] = by_kind.get(kind, 0) + 1
         if kind == "search":

@@ -14,6 +14,8 @@ ai-clip research -p demo --theme "AI 公司的生态位竞争" --max-searches 2
 ```
 
 `--max-searches` 会被限制在 1-3 次。默认复用 `.env` 中的 `TAVILY_API_KEY` 和当前 LLM 配置。
+每个 query 遇到 429、5xx 或临时网络错误时最多按 `source_research.max_attempts` 尝试 2 次；
+这不增加检索角度数量。认证错误、其他 4xx 和非法响应不会重试。
 
 ## 产物
 

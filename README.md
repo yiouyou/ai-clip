@@ -16,6 +16,7 @@ discover -> download -> extract -> analyze -> research -> storyboard -> review -
 - [Research 阶段](docs/research.md)
 - [Daily Radar 选题流程](docs/radar.md)
 - [Pair Review](docs/pair-review.md)
+- [外部调用可靠性](docs/reliability.md)
 
 ## 设计原则
 
