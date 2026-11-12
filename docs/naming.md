@@ -42,7 +42,7 @@ The corresponding artifact vocabulary is noun-oriented:
 
 ```text
 snapshots -> shortlist -> source-content -> candidates -> selection
--> evidence -> editorial-draft -> review -> revised-draft -> verification
+-> evidence-research -> editorial-draft -> review -> revised-draft -> verification
 ```
 
 ## Research boundaries

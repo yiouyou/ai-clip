@@ -680,7 +680,7 @@ def test_run_status_json_navigates_project_run_artifacts(tmp_path):
     assert payload["result"]["artifacts"][0]["exists"] is True
 
 
-def test_pair_review_json_reports_bounded_quality_chain(monkeypatch, tmp_path):
+def test_artifact_review_json_reports_bounded_quality_chain(monkeypatch, tmp_path):
     runner = CliRunner()
     review = ArtifactReviewReport(
         artifact="source-draft",

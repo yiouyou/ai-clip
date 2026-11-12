@@ -207,6 +207,8 @@ def _normalize_document(value, *, radar: bool):
         normalized["stage"] = stage_names.get(normalized["stage"], normalized["stage"])
     if isinstance(normalized.get("artifact"), str):
         normalized["artifact"] = _normalize_artifact(normalized["artifact"])
+    if isinstance(normalized.get("source_path"), str):
+        normalized["source_path"] = _normalize_path(normalized["source_path"])
     params = normalized.get("params")
     if isinstance(params, dict) and isinstance(params.get("artifact"), str):
         params["artifact"] = _normalize_artifact(params["artifact"])
@@ -217,12 +219,12 @@ def _normalize_document(value, *, radar: bool):
                 continue
             if isinstance(stage.get("name"), str):
                 stage["name"] = stage_names.get(stage["name"], stage["name"])
+            inputs = stage.get("inputs")
+            if isinstance(inputs, dict):
+                stage["inputs"] = _normalize_path_values(inputs)
             outputs = stage.get("outputs")
             if isinstance(outputs, dict):
-                stage["outputs"] = {
-                    key: _normalize_path(item) if isinstance(item, str) else item
-                    for key, item in outputs.items()
-                }
+                stage["outputs"] = _normalize_path_values(outputs)
     inputs = normalized.get("inputs")
     if isinstance(inputs, dict):
         normalized["inputs"] = _normalize_manifest_inputs(inputs)
@@ -247,6 +249,13 @@ def _normalize_path(value: str) -> str:
     for legacy, canonical in _PATH_REPLACEMENTS:
         normalized = normalized.replace(legacy, canonical)
     return normalized
+
+
+def _normalize_path_values(values: dict) -> dict:
+    return {
+        key: _normalize_path(item) if isinstance(item, str) else item
+        for key, item in values.items()
+    }
 
 
 def _normalize_manifest_inputs(inputs: dict) -> dict:

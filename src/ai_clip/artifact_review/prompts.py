@@ -1,4 +1,4 @@
-"""Prompts for native ai-pair style review."""
+"""Prompts for multi-model artifact review."""
 
 LOGIC_SYSTEM = (
     "You are the logic and accuracy reviewer for a short-video production pipeline. "

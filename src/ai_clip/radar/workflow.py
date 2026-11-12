@@ -52,7 +52,7 @@ def run_all(
     def content_stage():
         return StageResult(value=radar_stages.run_enrich_content(cfg, date))
 
-    def content_rerank_stage():
+    def rerank_stage():
         return StageResult(value=radar_stages.run_rerank_candidates(cfg, date))
 
     def selection_stage():
@@ -149,7 +149,7 @@ def run_all(
         "enrich-content": stage_execution("enrich-content", content_stage, {"date": date}),
         "rerank-candidates": stage_execution(
             "rerank-candidates",
-            content_rerank_stage,
+            rerank_stage,
             {"date": date},
         ),
         "select-topic": stage_execution("select-topic", selection_stage, {"date": date}),

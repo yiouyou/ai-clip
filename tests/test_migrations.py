@@ -16,7 +16,15 @@ def test_naming_migration_is_explicit_and_idempotent(tmp_path: Path):
     source_draft.write_text("draft", encoding="utf-8")
     artifact_manifest_path(source_draft).write_text("{}", encoding="utf-8")
     project_review = reviews / "source_draft_review.json"
-    project_review.write_text("{}", encoding="utf-8")
+    project_review.write_text(
+        json.dumps({
+            "artifact": "source_draft",
+            "source_path": str(source_draft),
+            "stage": "pair-review",
+            "reviewers": [{"raw": "source_draft.md must remain in quoted evidence"}],
+        }),
+        encoding="utf-8",
+    )
     radar_review = radar_reviews / "2026-01-02_zack_draft_review.json"
     radar_review.write_text(
         json.dumps({
@@ -54,6 +62,7 @@ def test_naming_migration_is_explicit_and_idempotent(tmp_path: Path):
                 {"name": "zack-ranking"},
                 {"name": "source-content"},
                 {"name": "pair-review", "metrics": {"reason": "pair-review blocked"}},
+                {"name": "pair-rewrite", "inputs": {"review": str(radar_review)}},
             ],
             "usage": {"by_stage": {"zack_selection": 2.5, "source_research": 0.5}},
         }),
@@ -109,7 +118,15 @@ def test_naming_migration_is_explicit_and_idempotent(tmp_path: Path):
     assert {item.status for item in applied} == {"migrated"}
     assert (project / "source-draft.md").read_text(encoding="utf-8") == "draft"
     assert artifact_manifest_path(project / "source-draft.md").exists()
-    assert (reviews / "source-draft.review.json").exists()
+    migrated_project_review = reviews / "source-draft.review.json"
+    assert migrated_project_review.exists()
+    project_review_data = json.loads(migrated_project_review.read_text(encoding="utf-8"))
+    assert project_review_data["artifact"] == "source-draft"
+    assert project_review_data["source_path"].endswith("source-draft.md")
+    assert project_review_data["stage"] == "review-artifact"
+    assert project_review_data["reviewers"][0]["raw"] == (
+        "source_draft.md must remain in quoted evidence"
+    )
     migrated_radar_review = radar_reviews / "2026-01-02.editorial-draft.review.json"
     assert migrated_radar_review.exists()
     assert json.loads(migrated_radar_review.read_text(encoding="utf-8")) == {
@@ -136,8 +153,12 @@ def test_naming_migration_is_explicit_and_idempotent(tmp_path: Path):
         "rank-candidates",
         "enrich-content",
         "review-artifact",
+        "rewrite-artifact",
     ]
     assert radar_status["stages"][2]["metrics"]["reason"] == "pair-review blocked"
+    assert radar_status["stages"][3]["inputs"]["review"].endswith(
+        "2026-01-02.editorial-draft.review.json"
+    )
     assert radar_status["usage"]["by_stage"] == {
         "select_topic": 2.5,
         "research_evidence": 0.5,

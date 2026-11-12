@@ -249,7 +249,7 @@ def test_rank_videos_records_channel_and_platform_normalization():
     assert "platform_velocity_ratio" in by_id["small:breakout"].score_components
 
 
-def test_content_rerank_can_promote_a_deep_mechanism_source():
+def test_rerank_candidates_can_promote_a_deep_mechanism_source():
     videos = [
         RadarVideo(
             video_id=f"v{i}",
@@ -834,7 +834,7 @@ def test_daily_radar_workflow_wraps_radar_pipeline(monkeypatch):
     }
 
 
-def test_run_all_can_pair_review_and_rewrite(monkeypatch, tmp_path: Path):
+def test_run_all_can_review_and_rewrite_artifact(monkeypatch, tmp_path: Path):
     calls = []
 
     monkeypatch.setattr("ai_clip.radar.stage.run_collect", lambda *a, **k: 1)
@@ -1275,7 +1275,7 @@ def test_editorial_draft_ignores_stale_evidence_research(monkeypatch, tmp_path: 
     assert seen["research"] == ""
 
 
-def test_source_content_transcribes_audio_when_subtitles_missing(monkeypatch, tmp_path: Path):
+def test_content_enrichment_transcribes_audio_when_subtitles_missing(monkeypatch, tmp_path: Path):
     seen_opts = []
 
     class FakeYDL:
@@ -1330,7 +1330,7 @@ def test_source_content_transcribes_audio_when_subtitles_missing(monkeypatch, tm
     assert seen_opts[1]["format"] == "bestaudio/best"
 
 
-def test_source_content_skips_subtitle_download_errors(monkeypatch, tmp_path: Path):
+def test_content_enrichment_skips_subtitle_download_errors(monkeypatch, tmp_path: Path):
     class FakeYDL:
         def __init__(self, opts):
             pass
@@ -1368,7 +1368,7 @@ def test_source_content_skips_subtitle_download_errors(monkeypatch, tmp_path: Pa
     assert "transcription disabled" in enriched[0].content_error
 
 
-def test_source_content_reuses_cached_script(tmp_path: Path):
+def test_content_enrichment_reuses_cached_script(tmp_path: Path):
     cache_dir = tmp_path / "youtube_abc"
     cache_dir.mkdir()
     (cache_dir / "script.json").write_text(
