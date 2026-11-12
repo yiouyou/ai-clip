@@ -50,9 +50,9 @@ def research_params(cfg: Config, theme: str, mode: str = "source") -> dict[str, 
     return {
         "theme": theme,
         "mode": mode,
-        "max_searches": str(cfg.source_research.max_searches),
-        "max_results": str(cfg.source_research.max_results),
-        "search_depth": cfg.source_research.search_depth,
+        "max_searches": str(cfg.web_research.max_searches),
+        "max_results": str(cfg.web_research.max_results),
+        "search_depth": cfg.web_research.search_depth,
         "prompt_version": PROMPT_VERSIONS["research"],
     }
 

@@ -19,14 +19,14 @@ from ai_clip.tools import all_tools
 
 def test_registry_uses_canonical_kebab_case_names():
     assert REGISTRY.stage("source-research").tool_name == "source_research"
-    assert REGISTRY.workflow("source-draft").status_key == "source_draft"
+    assert REGISTRY.workflow("source-draft").status_key == "source-draft"
     assert REGISTRY.workflow("daily-radar").stage_names({"research": False}) == (
         "collect",
-        "zack-ranking",
-        "source-content",
-        "content-rerank",
-        "zack-selection",
-        "zack-draft",
+        "rank-candidates",
+        "enrich-content",
+        "rerank-candidates",
+        "select-topic",
+        "draft-script",
     )
 
 
@@ -37,11 +37,11 @@ def test_daily_radar_optional_steps_follow_flags():
         "rewrite": True,
     })
     assert stages[-5:] == (
-        "source-research",
-        "zack-draft",
-        "pair-review",
-        "pair-rewrite",
-        "pair-verify",
+        "research-evidence",
+        "draft-script",
+        "review-artifact",
+        "rewrite-artifact",
+        "verify-artifact",
     )
 
 

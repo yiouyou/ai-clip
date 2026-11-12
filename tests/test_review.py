@@ -4,7 +4,7 @@ from ai_clip import pipeline
 from ai_clip.core.config import Config
 from ai_clip.core.models import Shot, Storyboard, VideoFormat
 from ai_clip.core.paths import ProjectPaths, read_model, write_model
-from ai_clip.produce.review import ReviewValidationError, apply_script_md, to_script_md
+from ai_clip.produce.storyboard_edit import StoryboardEditError, apply_script_md, to_script_md
 
 
 def _remix_sb() -> Storyboard:
@@ -115,7 +115,7 @@ def test_remix_apply_rejects_total_duration_over_target():
     )
     edited = "## shot 01 [0-6]\n第一段\n\n## shot 02 [10-16]\n第二段\n"
 
-    with pytest.raises(ReviewValidationError, match="12s exceeds target 10s"):
+    with pytest.raises(StoryboardEditError, match="12s exceeds target 10s"):
         apply_script_md(sb, edited)
 
 
@@ -132,7 +132,7 @@ def test_pipeline_rejected_review_does_not_overwrite_storyboard(tmp_path):
     write_model(paths.storyboard_json, original)
     paths.script_md.write_text("## shot 01 [0-8]\n超预算\n", encoding="utf-8")
 
-    with pytest.raises(ReviewValidationError):
-        pipeline.run_review_apply(cfg, "p")
+    with pytest.raises(StoryboardEditError):
+        pipeline.run_storyboard_edit_apply(cfg, "p")
 
     assert read_model(paths.storyboard_json, Storyboard) == original

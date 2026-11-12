@@ -333,7 +333,7 @@ def _write_script_manifest(
 ) -> None:
     write_artifact_manifest(
         cache_path,
-        stage="source-content",
+        stage="enrich-content",
         inputs=inputs,
         params=params,
     )

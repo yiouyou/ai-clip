@@ -147,7 +147,7 @@ def test_project_artifact_statuses(tmp_path: Path):
 
     assert statuses["research"] == "fresh"
     assert statuses["storyboard"] == "missing"
-    assert statuses["source_draft"] == "missing"
+    assert statuses["source-draft"] == "missing"
 
     pp.transcript_json.write_text('{"changed": true}', encoding="utf-8")
     statuses = {item.name: item.status for item in project_artifact_statuses(pp)}
@@ -161,7 +161,7 @@ def test_mark_stale_running_workflow_stages(tmp_path: Path):
     write_workflow_status(
         pp,
         WorkflowRunStatus(
-            workflow="source_draft",
+            workflow="source-draft",
             project="demo",
             status="running",
             stages=[
@@ -174,7 +174,7 @@ def test_mark_stale_running_workflow_stages(tmp_path: Path):
         ),
     )
 
-    run = mark_stale_running_stages(pp, "source_draft", older_than_minutes=0)
+    run = mark_stale_running_stages(pp, "source-draft", older_than_minutes=0)
 
     assert run.status == "stale"
     assert run.stages[0].status == "stale"
@@ -184,17 +184,17 @@ def test_mark_stale_running_workflow_stages(tmp_path: Path):
 def test_begin_workflow_run_archives_previous_attempt(tmp_path: Path):
     pp = ProjectPaths(tmp_path, "demo")
     pp.ensure()
-    first = begin_workflow_run(pp, "source_draft")
-    with track_workflow_stage(pp, "source_draft", "download"):
+    first = begin_workflow_run(pp, "source-draft")
+    with track_workflow_stage(pp, "source-draft", "download"):
         pass
-    completed = read_workflow_status(pp, "source_draft")
+    completed = read_workflow_status(pp, "source-draft")
 
-    second = begin_workflow_run(pp, "source_draft")
+    second = begin_workflow_run(pp, "source-draft")
 
     assert first.run_id == completed.run_id
     assert second.run_id != first.run_id
     assert second.attempt == 2
-    history = pp.runs_dir / "history" / "source_draft" / f"{first.run_id}.json"
+    history = pp.runs_dir / "history" / "source-draft" / f"{first.run_id}.json"
     archived = WorkflowRunStatus.model_validate_json(history.read_text(encoding="utf-8"))
     assert archived.status == "succeeded"
     assert archived.stages[0].name == "download"
@@ -203,7 +203,7 @@ def test_begin_workflow_run_archives_previous_attempt(tmp_path: Path):
 def test_begin_workflow_run_archives_interrupted_stage_as_stale(tmp_path: Path):
     pp = ProjectPaths(tmp_path, "demo")
     pp.ensure()
-    first = begin_workflow_run(pp, "source_draft")
+    first = begin_workflow_run(pp, "source-draft")
     write_workflow_status(
         pp,
         first.model_copy(update={
@@ -212,9 +212,9 @@ def test_begin_workflow_run_archives_interrupted_stage_as_stale(tmp_path: Path):
         }),
     )
 
-    begin_workflow_run(pp, "source_draft")
+    begin_workflow_run(pp, "source-draft")
 
-    history = pp.runs_dir / "history" / "source_draft" / f"{first.run_id}.json"
+    history = pp.runs_dir / "history" / "source-draft" / f"{first.run_id}.json"
     archived = WorkflowRunStatus.model_validate_json(history.read_text(encoding="utf-8"))
     assert archived.status == "stale"
     assert archived.stages[0].status == "stale"
@@ -258,18 +258,18 @@ def test_config_env_override(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("AICLIP_RADAR_FEEDBACK", "config/my-feedback.yaml")
     monkeypatch.setenv("AICLIP_RADAR_CHANNEL_WORKERS", "2")
     monkeypatch.setenv("TAVILY_API_KEY", "tavily-key")
-    monkeypatch.setenv("AICLIP_SOURCE_RESEARCH_MAX_SEARCHES", "3")
+    monkeypatch.setenv("AICLIP_WEB_RESEARCH_MAX_SEARCHES", "3")
     cfg = load_config(tmp_path / "missing.yaml")  # missing -> defaults + env
     assert cfg.llm.model == "qwen-max"
     assert cfg.data_dir == "/tmp/x"
-    assert cfg.pair.base_url == "https://newapp.example/v1"
-    assert cfg.pair.api_key == "new-key"
-    assert cfg.pair.deepseek_api_key == "deep-key"
+    assert cfg.artifact_review.base_url == "https://newapp.example/v1"
+    assert cfg.artifact_review.api_key == "new-key"
+    assert cfg.artifact_review.deepseek_api_key == "deep-key"
     assert cfg.radar.channels_path == "config/my-channels.yaml"
     assert cfg.radar.feedback_path == "config/my-feedback.yaml"
     assert cfg.radar.channel_workers == 2
-    assert cfg.source_research.tavily_api_key == "tavily-key"
-    assert cfg.source_research.max_searches == 3
+    assert cfg.web_research.tavily_api_key == "tavily-key"
+    assert cfg.web_research.max_searches == 3
 
 
 def test_config_rejects_unknown_key(tmp_path: Path):

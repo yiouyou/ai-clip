@@ -2,7 +2,7 @@
 
 Research 分为两种输入契约，共享搜索引擎和产物格式：
 
-- `research`：源视频研究，依赖 transcript，可选读取 analysis，供 source-draft/remix 使用。
+- `source-research`：源视频研究，依赖 transcript，可选读取 analysis，供 source-draft/remix 使用。
 - `topic-research`：主题研究，只依赖 theme，供 original 内部使用。
 
 两者都用于在生成口播/分镜前补足事实、背景、风险边界和原创角度。
@@ -10,11 +10,11 @@ Research 分为两种输入契约，共享搜索引擎和产物格式：
 ## 命令
 
 ```bash
-ai-clip research -p demo --theme "AI 公司的生态位竞争" --max-searches 2
+ai-clip source-research -p demo --theme "AI 公司的生态位竞争" --max-searches 2
 ```
 
 `--max-searches` 会被限制在 1-3 次。默认复用 `.env` 中的 `TAVILY_API_KEY` 和当前 LLM 配置。
-每个 query 遇到 429、5xx 或临时网络错误时最多按 `source_research.max_attempts` 尝试 2 次；
+每个 query 遇到 429、5xx 或临时网络错误时最多按 `web_research.max_attempts` 尝试 2 次；
 这不增加检索角度数量。认证错误、其他 4xx 和非法响应不会重试。
 
 ## 产物

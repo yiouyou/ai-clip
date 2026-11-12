@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ai_clip.core import llm as llm_mod
-from ai_clip.core.config import LLMConfig, PairConfig
+from ai_clip.core.config import LLMConfig, ArtifactReviewConfig
 
 
 @dataclass(frozen=True)
@@ -14,7 +14,7 @@ class ReviewModel:
     max_attempts: int = 3
 
 
-def configured_models(cfg: PairConfig) -> list[ReviewModel]:
+def configured_models(cfg: ArtifactReviewConfig) -> list[ReviewModel]:
     models: list[ReviewModel] = []
     if cfg.base_url and cfg.api_key:
         models.extend(

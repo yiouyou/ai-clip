@@ -26,10 +26,10 @@ Purpose: introduce the daily channel-tracking and topic-selection workflow.
 Likely files:
 
 - `src/ai_clip/radar/`
-- `src/ai_clip/source_content/`
-- `src/ai_clip/zack_ranking/`
-- `src/ai_clip/zack_selection/`
-- `src/ai_clip/zack_draft/`
+- `src/ai_clip/content_enrichment/`
+- `src/ai_clip/radar/ranking.py`
+- `src/ai_clip/radar/selection.py`
+- `src/ai_clip/radar/drafting.py`
 - `config/channels.example.yaml`
 - `config/radar-feedback.example.yaml`
 - radar-related CLI entries in `src/ai_clip/cli.py`
@@ -41,23 +41,24 @@ Purpose: add Tavily-backed research for selected radar topics and project workfl
 
 Likely files:
 
-- `src/ai_clip/source_research/`
+- `src/ai_clip/web_research/`
+- `src/ai_clip/radar/evidence_research.py`
 - `src/ai_clip/research/`
 - project research wiring in `src/ai_clip/pipeline.py`
 - prompt injection in `src/ai_clip/produce/formats/`
-- research-related tests in `tests/test_source_research.py` and `tests/test_research.py`
+- research-related tests in `tests/test_evidence_research.py` and `tests/test_research.py`
 
-## Commit Group 3: Source Draft and Pair Review
+## Commit Group 3: Source Draft and Artifact Review
 
 Purpose: support single-source original drafts and multi-model artifact review.
 
 Likely files:
 
 - `src/ai_clip/produce/source_draft.py`
-- `src/ai_clip/pair/`
-- source-draft and pair-review CLI entries
+- `src/ai_clip/artifact_review/`
+- source-draft and review-artifact CLI entries
 - `tests/test_source_draft.py`
-- `tests/test_pair.py`
+- `tests/test_artifact_review.py`
 
 ## Commit Group 4: ArtifactStore, Metadata, Status, and Run Status
 
@@ -106,19 +107,18 @@ the corresponding diff.
 ```bash
 # Group 1: radar workflow.
 git add .gitignore config/default.yaml config/channels.example.yaml config/radar-feedback.example.yaml \
-  src/ai_clip/radar src/ai_clip/source_content src/ai_clip/zack_ranking \
-  src/ai_clip/zack_selection src/ai_clip/zack_draft tests/test_radar.py
+  src/ai_clip/radar src/ai_clip/content_enrichment tests/test_radar.py
 git add -p src/ai_clip/cli.py src/ai_clip/workflows.py src/ai_clip/tools.py \
   tests/test_cli.py tests/test_tools.py tests/test_workflows.py
 
 # Group 2: project/source research.
-git add src/ai_clip/research src/ai_clip/source_research \
-  tests/test_research.py tests/test_source_research.py
+git add src/ai_clip/research src/ai_clip/web_research src/ai_clip/radar/evidence_research.py \
+  tests/test_research.py tests/test_evidence_research.py
 git add -p src/ai_clip/pipeline.py src/ai_clip/produce/formats
 
-# Group 3: source draft and pair review.
-git add src/ai_clip/produce/source_draft.py src/ai_clip/pair \
-  tests/test_source_draft.py tests/test_pair.py
+# Group 3: source draft and artifact review.
+git add src/ai_clip/produce/source_draft.py src/ai_clip/artifact_review \
+  tests/test_source_draft.py tests/test_artifact_review.py
 git add -p src/ai_clip/cli.py src/ai_clip/tools.py
 
 # Group 4: artifact metadata and status.

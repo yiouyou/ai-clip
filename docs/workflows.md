@@ -22,7 +22,7 @@ tool schema、CLI 名称，以及 workflow 的顺序和可选条件。Typer 参�
 
 共享能力与领域适配器分开：`extract/remote.py` 提供 URL 字幕、音频下载、Whisper 兜底和缓存；
 `research_engine.py` 统一查询解析、角度配额、最多 3 次搜索及结果整理。项目 research 与
-Daily Radar research 只定义各自的素材和编辑角度。Pair Review 接收中性的 `ArtifactRef`，
+Daily Radar research 只定义各自的素材和编辑角度。Artifact Review 接收中性的 `ArtifactRef`，
 由 `artifact_catalog.py` 解析项目或 Radar 路径，因此 review 引擎不依赖具体 workflow 布局。
 
 ## 单步阶段
@@ -34,18 +34,18 @@ ai-clip discover "AI" -p demo --top 5
 ai-clip download "<url>" -p demo
 ai-clip extract -p demo --subs
 ai-clip analyze -p demo --intent info
-ai-clip research -p demo --theme "AI 公司的生态位竞争" --max-searches 2
+ai-clip source-research -p demo --theme "AI 公司的生态位竞争" --max-searches 2
 ai-clip storyboard -p demo --theme "AI 公司的生态位竞争"
-ai-clip review -p demo
-ai-clip review -p demo --apply
+ai-clip storyboard-edit -p demo
+ai-clip storyboard-edit -p demo --apply
 ai-clip assets -p demo
 ai-clip voiceover -p demo
 ai-clip assemble -p demo
 ```
 
-`review` 导出的 `script.md` 按镜头分 block：所有体裁可编辑口播；slideshow 额外使用
+`storyboard-edit` 导出的 `script.md` 按镜头分 block：所有体裁可编辑口播；slideshow 额外使用
 `Caption: ...` 行编辑或清空画面标题；remix 可修改 `[start-end]` 秒数或删除整个 block。
-新生成的 storyboard 会保存 `target_duration_sec`。`review --apply` 若发现 remix 编辑后的
+新生成的 storyboard 会保存 `target_duration_sec`。`storyboard-edit --apply` 若发现 remix 编辑后的
 时间戳总长超过目标，会返回 exit code 2 并保持原 `storyboard.json` 不变；没有该字段的旧
 storyboard 按兼容模式应用，不额外限制。
 
@@ -57,7 +57,7 @@ ai-clip status -p demo --json
 ```
 
 JSON 输出统一使用 `schema_version / command / status / result` envelope。`result` 包含
-`research/storyboard/source_draft` 的 freshness、review/rewrite/verify 链、分镜镜头数、
+`research/storyboard/source-draft` 的 freshness、review/rewrite/verify 链、分镜镜头数、
 缺失素材、运行状态和本次 API usage。
 usage 的 `calls` 表示成功的逻辑调用，`attempts/retries` 额外反映有限网络重试；终止错误会在
 阶段 `error` 中包含标准化 category 和 attempts。详细策略见 [外部调用可靠性](reliability.md)。
@@ -68,7 +68,7 @@ usage 的 `calls` 表示成功的逻辑调用，`attempts/retries` 额外反映�
 |------|------|------|
 | `ai-clip transcribe <url> -p P` | download -> extract -> export | `.srt` + `.txt` |
 | `ai-clip teardown <url> -p P` | download -> extract -> analyze | 爆款公式 |
-| `ai-clip source-draft <url> -p P` | download -> extract -> analyze -> [research] -> source_draft | `source_draft.md` |
+| `ai-clip source-draft <url> -p P` | download -> extract -> analyze -> [source-research] -> source-draft | `source-draft.md` |
 | `ai-clip remix <url> --theme T -p P` | download -> extract -> analyze -> [research] -> remix storyboard -> voiceover -> assemble | `output.mp4` |
 | `ai-clip original --theme T -p P` | [topic-research] -> storyboard -> assets -> [voiceover -> assemble] | `output.mp4` 或等待补素材 |
 
@@ -77,12 +77,12 @@ usage 的 `calls` 表示成功的逻辑调用，`attempts/retries` 额外反映�
 ```text
 transcribe   = download -> extract -> export
 teardown     = download -> extract -> analyze
-source-draft = download -> extract -> analyze -> [research] -> source-draft
-remix        = download -> extract -> analyze -> [research] -> storyboard -> voiceover -> assemble
+source-draft = download -> extract -> analyze -> [source-research] -> source-draft
+remix        = download -> extract -> analyze -> [source-research] -> storyboard -> voiceover -> assemble
 original     = [topic-research] -> storyboard -> assets -> [voiceover -> assemble when assets-ready]
-daily-radar  = collect -> zack-ranking -> source-content -> content-rerank -> zack-selection
-               -> [source-research] -> zack-draft -> [pair-review]
-               -> [pair-rewrite -> pair-verify]
+daily-radar  = collect -> rank-candidates -> enrich-content -> rerank-candidates -> select-topic
+               -> [research-evidence] -> draft-script -> [review-artifact]
+               -> [rewrite-artifact -> verify-artifact]
 ```
 
 `source-draft`、`remix` 可显式启用源视频 research；`original` 使用独立的主题 research：
@@ -94,7 +94,7 @@ ai-clip original -p demo --theme "..." --research --research-searches 1
 ```
 
 `source-draft` 默认复用有效的 `clip.json`、`transcript.json`、`analysis.json`、
-`research.md` 和 `source_draft.md`。有效性会核对 URL、阶段参数、模型和上游文件；任一上游
+`research.md` 和 `source-draft.md`。有效性会核对 URL、阶段参数、模型和上游文件；任一上游
 重跑后，下游不会继续复用。旧项目中可确认同一来源的 clip/transcript/analysis 会补写
 metadata，无法确认生成参数的旧 research/draft 会重跑一次。需要强制全量重跑时使用
 `--no-resume`。长视频在 CPU 上转写较慢时，可用 `--whisper-model small` 临时降低本次转写模型。

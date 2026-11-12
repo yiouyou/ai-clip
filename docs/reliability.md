@@ -24,7 +24,7 @@ ai-clip 对外部调用采用“显式允许、有限次数”的重试策略。
 
 | 服务 | 默认总 attempts | 自动重试 | 不自动重试 |
 |------|----------------|----------|------------|
-| 主 LLM / Pair Review | 3 | 429、408/504、5xx、transport timeout/error | 认证、其他 4xx、非法响应 |
+| 主 LLM / Artifact Review | 3 | 429、408/504、5xx、transport timeout/error | 认证、其他 4xx、非法响应 |
 | Tavily | 2/每个 query | 429、408/504、5xx、transport timeout/error | 认证、其他 4xx、非法响应 |
 | MiMo TTS | 2 | 429、408/504、5xx、connect/connect-timeout/pool-timeout | read/write/protocol error、认证、非法响应 |
 | yt-dlp | 由 yt-dlp 配置管理 | 当前 `retries=1`、`extractor_retries=1` | 由采集诊断隔离 |
@@ -39,15 +39,15 @@ MiMo 的 read timeout 特意不重试：服务端可能已经完成生成并计�
 ```yaml
 llm:
   max_attempts: 3
-pair:
+artifact_review:
   max_attempts: 3
-source_research:
+web_research:
   max_attempts: 2
 tts:
   max_attempts: 2
 ```
 
-`source_research.max_searches` 控制一次 research 使用几个不同角度的 query；`max_attempts` 只控制
+`web_research.max_searches` 控制一次 research 使用几个不同角度的 query；`max_attempts` 只控制
 同一 query 遇到临时网络错误时最多发送几次，两者不能混用。
 
 ## 异步任务恢复

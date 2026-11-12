@@ -20,11 +20,11 @@ def radar_artifact_statuses(paths: RadarPaths) -> list[RadarArtifactStatus]:
         ("shortlist", paths.shortlist_json),
         ("candidates", paths.candidates_json),
         ("selection", paths.selection_json),
-        ("source_research", paths.research_md),
-        ("zack_draft", paths.draft_md),
-        ("pair_review", paths.reviews_dir / f"{paths.date}_zack_draft_review.json"),
-        ("pair_rewrite", paths.draft_revised_md),
-        ("pair_verify", paths.reviews_dir / f"{paths.date}_zack_draft_verify.json"),
+        ("evidence-research", paths.research_md),
+        ("editorial-draft", paths.draft_md),
+        ("review-artifact", paths.draft_review_json),
+        ("rewrite-artifact", paths.draft_revised_md),
+        ("verify-artifact", paths.draft_verification_json),
     ]
     return [
         RadarArtifactStatus(

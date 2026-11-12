@@ -195,7 +195,7 @@ def source_draft(
     theme: str = "",
     resume: bool = True,
 ) -> dict:
-    """W7 单视频原创口播: download -> extract -> analyze -> [research] -> source_draft."""
+    """W7 单视频原创口播: download -> extract -> analyze -> [source-research] -> source-draft."""
     workflow = REGISTRY.workflow("source-draft").status_key
     pp = _paths(cfg, project)
     mark_stale_running_stages(pp, workflow, older_than_minutes=0)
@@ -286,7 +286,7 @@ def source_draft(
                 outputs={"research": str(research_md)},
                 metrics={"reused": True},
             )
-        research_md = pipeline.run_research(cfg, project, theme=theme)
+        research_md = pipeline.run_source_research(cfg, project, theme=theme)
         return StageResult(value=research_md, outputs={"research": str(research_md)})
 
     def source_draft_stage():
@@ -337,7 +337,11 @@ def source_draft(
                 analyze_stage,
                 {"intent": intent.value},
             ),
-            "research": stage_execution("research", research_stage, {"theme": theme}),
+            "source-research": stage_execution(
+                "source-research",
+                research_stage,
+                {"theme": theme},
+            ),
             "source-draft": stage_execution(
                 "source-draft",
                 source_draft_stage,
@@ -383,7 +387,7 @@ def remix(
         return StageResult(value=pipeline.run_analyze(cfg, project, intent))
 
     def research_stage():
-        research_md = pipeline.run_research(cfg, project, theme=theme)
+        research_md = pipeline.run_source_research(cfg, project, theme=theme)
         return StageResult(value=research_md, outputs={"research": str(research_md)})
 
     def storyboard_stage():
@@ -430,7 +434,11 @@ def remix(
                 analyze_stage,
                 {"intent": intent.value},
             ),
-            "research": stage_execution("research", research_stage, {"theme": theme}),
+            "source-research": stage_execution(
+                "source-research",
+                research_stage,
+                {"theme": theme},
+            ),
             "storyboard": stage_execution(
                 "storyboard",
                 storyboard_stage,
@@ -589,7 +597,7 @@ def daily_radar(
         rewrite=rewrite,
     )
     return {
-        "workflow": "daily_radar",
+        "workflow": "daily-radar",
         "date": result.date,
         "collected": result.collected,
         "candidates": result.candidates_path,

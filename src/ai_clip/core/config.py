@@ -61,7 +61,7 @@ class ProduceConfig(StrictConfigModel):
     moneyprinter_url: str = "http://127.0.0.1:8080"
 
 
-class PairConfig(StrictConfigModel):
+class ArtifactReviewConfig(StrictConfigModel):
     # OpenAI-compatible review endpoint. NEWAPP_* is applied from .env.
     base_url: str = ""
     api_key: str = ""
@@ -77,7 +77,7 @@ class PairConfig(StrictConfigModel):
     max_attempts: int = Field(default=3, ge=1, le=5)
 
 
-class SourceResearchConfig(StrictConfigModel):
+class WebResearchConfig(StrictConfigModel):
     tavily_api_key: str = ""
     max_searches: int = Field(default=2, ge=1, le=3)
     max_results: int = Field(default=5, ge=1)
@@ -87,6 +87,7 @@ class SourceResearchConfig(StrictConfigModel):
 
 
 class RadarConfig(StrictConfigModel):
+    editorial_profile: str = "biology-systems"
     channels_path: str = "config/channels.yaml"
     feedback_path: str = "config/radar-feedback.yaml"
     top_n: int = Field(default=3, ge=1)
@@ -114,8 +115,8 @@ class Config(StrictConfigModel):
     assets: AssetsConfig = Field(default_factory=AssetsConfig)
     tts: TTSConfig = Field(default_factory=TTSConfig)
     produce: ProduceConfig = Field(default_factory=ProduceConfig)
-    pair: PairConfig = Field(default_factory=PairConfig)
-    source_research: SourceResearchConfig = Field(default_factory=SourceResearchConfig)
+    artifact_review: ArtifactReviewConfig = Field(default_factory=ArtifactReviewConfig)
+    web_research: WebResearchConfig = Field(default_factory=WebResearchConfig)
     radar: RadarConfig = Field(default_factory=RadarConfig)
 
 def _resolve_llm_key(base_url: str) -> str:
@@ -165,21 +166,21 @@ def _apply_env(cfg: Config) -> Config:
     cfg.produce.moneyprinter_url = os.getenv(
         "AICLIP_MPT_URL", cfg.produce.moneyprinter_url
     )
-    cfg.pair.base_url = os.getenv("NEWAPP_URL", cfg.pair.base_url)
-    cfg.pair.api_key = os.getenv("NEWAPP_API_KEY", cfg.pair.api_key)
-    cfg.pair.deepseek_api_key = os.getenv("DEEPSEEK_API_KEY", cfg.pair.deepseek_api_key)
-    cfg.source_research.tavily_api_key = os.getenv(
-        "TAVILY_API_KEY", cfg.source_research.tavily_api_key
+    cfg.artifact_review.base_url = os.getenv("NEWAPP_URL", cfg.artifact_review.base_url)
+    cfg.artifact_review.api_key = os.getenv("NEWAPP_API_KEY", cfg.artifact_review.api_key)
+    cfg.artifact_review.deepseek_api_key = os.getenv("DEEPSEEK_API_KEY", cfg.artifact_review.deepseek_api_key)
+    cfg.web_research.tavily_api_key = os.getenv(
+        "TAVILY_API_KEY", cfg.web_research.tavily_api_key
     )
-    if "AICLIP_SOURCE_RESEARCH_MAX_SEARCHES" in os.environ:
-        cfg.source_research.max_searches = _env_int(
-            os.getenv("AICLIP_SOURCE_RESEARCH_MAX_SEARCHES", ""),
-            cfg.source_research.max_searches,
+    if "AICLIP_WEB_RESEARCH_MAX_SEARCHES" in os.environ:
+        cfg.web_research.max_searches = _env_int(
+            os.getenv("AICLIP_WEB_RESEARCH_MAX_SEARCHES", ""),
+            cfg.web_research.max_searches,
         )
-    if "AICLIP_SOURCE_RESEARCH_MAX_RESULTS" in os.environ:
-        cfg.source_research.max_results = _env_int(
-            os.getenv("AICLIP_SOURCE_RESEARCH_MAX_RESULTS", ""),
-            cfg.source_research.max_results,
+    if "AICLIP_WEB_RESEARCH_MAX_RESULTS" in os.environ:
+        cfg.web_research.max_results = _env_int(
+            os.getenv("AICLIP_WEB_RESEARCH_MAX_RESULTS", ""),
+            cfg.web_research.max_results,
         )
     cfg.radar.channels_path = os.getenv("AICLIP_RADAR_CHANNELS", cfg.radar.channels_path)
     transcribe_missing = os.getenv("AICLIP_RADAR_TRANSCRIBE_MISSING")

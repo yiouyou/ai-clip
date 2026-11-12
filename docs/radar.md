@@ -51,22 +51,22 @@ uv run --extra download --extra extract ai-clip daily-radar --top 3 --channel-ti
 流程:
 
 ```text
-collect -> zack-ranking -> source-content -> content-rerank -> zack-selection
-        -> [source-research] -> zack-draft
+collect -> rank-candidates -> enrich-content -> rerank-candidates -> select-topic
+        -> [research-evidence] -> draft-script
 ```
 
 完整流程顺序和 optional 条件来自统一 `WorkflowSpec`。阶段实现保留在 `radar/stage.py`，完整
 编排在 `radar/workflow.py`，回顾性回填在 `radar/backfill.py`，超时采集在 `radar/collect.py`。
 
-`zack-ranking` 先按频道/平台基线归一化 metadata，默认保留 9 个 shortlist；`source-content`
-只为 shortlist 获取字幕或转写，`content-rerank` 再结合脚本深度、机制素材和 metadata 排名收敛
+`rank-candidates` 先按频道/平台基线归一化 metadata，默认保留 9 个 shortlist；`enrich-content`
+只为 shortlist 获取字幕或转写，`rerank-candidates` 再结合脚本深度、机制素材和 metadata 排名收敛
 到最终 Top 3。这样不会全量转写几十个频道，也不会在拿到脚本前过早淘汰内容更合适的选题。
 
 每个 `script.json` 都有版本化 manifest，记录 URL、内容来源、Whisper 设置和 cookie 文件签名。
 更新 cookie 后会先重试官方字幕；字幕仍不可用且 Whisper 配置未变时复用原转写，模型或语言改变时
 才重新转写。旧字幕缓存会直接补 manifest，旧 Whisper 缓存会先尝试一次字幕升级。
 
-`source-research` 默认由选题的 `fact_risk` 自动决定：高风险且 Tavily 可用时最多搜索 2 次；
+`research-evidence` 默认由选题的 `fact_risk` 自动决定：高风险且 Tavily 可用时最多搜索 2 次；
 手动 `--research` 会强制执行，仍可用 `--research-searches` 指定 1-3 次:
 
 ```bash
@@ -80,18 +80,19 @@ ai-clip daily-radar --top 3 --research --review
 ai-clip daily-radar --top 3 --research --rewrite
 ```
 
-`--rewrite` 固定执行一次 pair-review、一次 rewrite 和一次 verify，不会循环改写。
+`--rewrite` 固定执行一次 `review-artifact`、一次 `rewrite-artifact` 和一次
+`verify-artifact`，不会循环改写。
 
 ## 阶段命令
 
 ```bash
 ai-clip collect --workflow daily-radar --date 2026-07-08 --force-collect
-ai-clip zack-ranking --workflow daily-radar --date 2026-07-08 --top 3
-ai-clip source-content --workflow daily-radar --date 2026-07-08
-ai-clip content-rerank --workflow daily-radar --date 2026-07-08
-ai-clip zack-selection --workflow daily-radar --date 2026-07-08
-ai-clip source-research --workflow daily-radar --date 2026-07-08 --max-searches 2
-ai-clip zack-draft --workflow daily-radar --date 2026-07-08
+ai-clip rank-candidates --workflow daily-radar --date 2026-07-08 --top 3
+ai-clip enrich-content --workflow daily-radar --date 2026-07-08
+ai-clip rerank-candidates --workflow daily-radar --date 2026-07-08
+ai-clip select-topic --workflow daily-radar --date 2026-07-08
+ai-clip research-evidence --workflow daily-radar --date 2026-07-08 --max-searches 2
+ai-clip draft-script --workflow daily-radar --date 2026-07-08
 ```
 
 强制采集按频道更新：成功频道替换旧快照；`partial`、`failed` 或 `timeout` 频道保留已有快照，
@@ -101,29 +102,29 @@ ai-clip zack-draft --workflow daily-radar --date 2026-07-08
 
 ```bash
 ai-clip doctor
-ai-clip radar-status --date 2026-07-08
-ai-clip radar-status --date 2026-07-08 --json
+ai-clip daily-radar-diagnostics --date 2026-07-08
+ai-clip daily-radar-diagnostics --date 2026-07-08 --json
 ai-clip run-status --workflow daily-radar --date 2026-07-08 --json
-ai-clip radar-repair --date 2026-07-08
-ai-clip radar-repair --date 2026-07-08 --apply
-ai-clip radar-feedback accept --date 2026-07-08 --reason "角度适合"
-ai-clip radar-feedback reject --date 2026-07-08 --video-id youtube:VIDEO_ID --reason "过于气象"
+ai-clip daily-radar-repair --date 2026-07-08
+ai-clip daily-radar-repair --date 2026-07-08 --apply
+ai-clip daily-radar-feedback accept --date 2026-07-08 --reason "角度适合"
+ai-clip daily-radar-feedback reject --date 2026-07-08 --video-id youtube:VIDEO_ID --reason "过于气象"
 ```
 
-`doctor` 默认只做本地检查，不触发付费 LLM/Tavily 调用。`radar-repair` 很保守，只清理明确
+`doctor` 默认只做本地检查，不触发付费 LLM/Tavily 调用。`daily-radar-repair` 很保守，只清理明确
 无效的空 snapshot / shortlist / candidates。
 
-`radar-status` 还会显示关键 radar 产物的 freshness:
+`daily-radar-diagnostics` 还会显示关键 radar 产物的 freshness:
 
 ```text
 shortlist
 candidates
 selection
-source_research
-zack_draft
-pair_review
-pair_rewrite
-pair_verify
+evidence-research
+editorial-draft
+review-artifact
+rewrite-artifact
+verify-artifact
 ```
 
 状态含义与项目级 `status` 一致：`fresh`、`stale`、`missing`。
@@ -151,8 +152,8 @@ data/radar/research/YYYY-MM-DD.md
 data/radar/briefs/YYYY-MM-DD.md
 data/radar/drafts/YYYY-MM-DD.md
 data/radar/drafts/YYYY-MM-DD.revised.md
-data/radar/reviews/YYYY-MM-DD_zack_draft_review.json
-data/radar/reviews/YYYY-MM-DD_zack_draft_verify.json
+data/radar/reviews/YYYY-MM-DD.editorial-draft.review.json
+data/radar/reviews/YYYY-MM-DD.editorial-draft.verify.json
 ```
 
 关键产物会额外写 sidecar metadata:

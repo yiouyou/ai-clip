@@ -3,23 +3,23 @@ from __future__ import annotations
 import httpx
 
 from ai_clip.core import billing
-from ai_clip.core.config import SourceResearchConfig
+from ai_clip.core.config import WebResearchConfig
 from ai_clip.core.retry import (
     ExternalCallError,
     FailureCategory,
     RetryPolicy,
     run_with_retry,
 )
-from ai_clip.source_research.models import SearchResult
+from ai_clip.web_research.models import SearchResult
 
 
-class SourceResearchError(ExternalCallError):
+class WebResearchError(ExternalCallError):
     pass
 
 
-def tavily_search(query: str, cfg: SourceResearchConfig) -> list[SearchResult]:
+def tavily_search(query: str, cfg: WebResearchConfig) -> list[SearchResult]:
     if not cfg.tavily_api_key:
-        raise SourceResearchError(
+        raise WebResearchError(
             "TAVILY_API_KEY is empty",
             service="tavily",
             operation="search",
@@ -73,7 +73,7 @@ def tavily_search(query: str, cfg: SourceResearchConfig) -> list[SearchResult]:
                 FailureCategory.TRANSIENT,
             }),
         ),
-        error_type=SourceResearchError,
+        error_type=WebResearchError,
     )
     results = outcome.value
     billing.record_search("tavily", query, len(results), attempts=outcome.attempts)

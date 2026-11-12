@@ -70,11 +70,11 @@ class ProjectPaths:
 
     @property
     def source_draft_md(self) -> Path:
-        return self.root / "source_draft.md"
+        return self.root / "source-draft.md"
 
     @property
     def source_draft_revised_md(self) -> Path:
-        return self.root / "source_draft.revised.md"
+        return self.root / "source-draft.revised.md"
 
     @property
     def prompts_dir(self) -> Path:
@@ -102,7 +102,7 @@ class ProjectPaths:
 
     @property
     def reference_audio(self) -> Path:
-        return self.root / "voice_reference.mp3"
+        return self.root / "voice-reference.mp3"
 
     @property
     def output_mp4(self) -> Path:

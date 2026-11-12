@@ -21,7 +21,7 @@ class ReviewerResult(BaseModel):
     error: str = ""
 
 
-class PairReviewReport(BaseModel):
+class ArtifactReviewReport(BaseModel):
     artifact: str
     source_path: str
     kind: str = "review"

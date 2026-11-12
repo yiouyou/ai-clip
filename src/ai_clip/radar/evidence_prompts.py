@@ -41,7 +41,7 @@ SYNTHESIS_SYSTEM = (
     "into safe, source-grounded wording. Do not invent facts beyond the search results."
 )
 
-SYNTHESIS_USER = """Synthesize source research for zack-draft.
+SYNTHESIS_USER = """Synthesize evidence research for an editorial draft.
 
 Date: {date}
 Selection:
@@ -64,7 +64,7 @@ Return Markdown with this structure:
 - Claims that still need caution, better sourcing, or safer wording.
 
 ## Safe Framing
-- How zack-draft should phrase the topic without repeating title bait.
+- How the editorial draft should phrase the topic without repeating title bait.
 
 ## Useful Context
 - Background, dates, named entities, numbers, or mechanisms useful for original commentary.

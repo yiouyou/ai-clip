@@ -4,23 +4,23 @@ from typer.testing import CliRunner
 
 from ai_clip import cli
 from ai_clip.core.doctor import DoctorCheck
-from ai_clip.pair.models import PairReviewReport, ReviewerResult
-from ai_clip.produce.review import ReviewValidationError
+from ai_clip.artifact_review.models import ArtifactReviewReport, ReviewerResult
+from ai_clip.produce.storyboard_edit import StoryboardEditError
 
 
 def test_review_apply_reports_duration_validation_error(monkeypatch):
     runner = CliRunner()
     monkeypatch.setattr(
-        "ai_clip.cli.pipeline.run_review_apply",
+        "ai_clip.cli.pipeline.run_storyboard_edit_apply",
         lambda *a, **k: (_ for _ in ()).throw(
-            ReviewValidationError("reviewed remix duration 40s exceeds target 30s")
+            StoryboardEditError("reviewed remix duration 40s exceeds target 30s")
         ),
     )
 
-    result = runner.invoke(cli.app, ["review", "-p", "demo", "--apply"])
+    result = runner.invoke(cli.app, ["storyboard-edit", "-p", "demo", "--apply"])
 
     assert result.exit_code == 2
-    assert "review rejected" in result.output
+    assert "storyboard edit rejected" in result.output
     assert "40s exceeds target 30s" in result.output
 
 
@@ -43,7 +43,7 @@ def test_daily_radar_is_top_level_workflow_command(monkeypatch):
         assert review is False
         assert rewrite is False
         return {
-            "workflow": "daily_radar",
+            "workflow": "daily-radar",
             "date": "2026-01-02",
             "collected": 4,
             "draft": "draft.md",
@@ -73,11 +73,11 @@ def test_daily_radar_can_enable_source_research(monkeypatch):
     ):
         seen["research"] = research
         seen["force_collect"] = force_collect
-        seen["max_searches"] = cfg.source_research.max_searches
+        seen["max_searches"] = cfg.web_research.max_searches
         seen["review"] = review
         seen["rewrite"] = rewrite
         return {
-            "workflow": "daily_radar",
+            "workflow": "daily-radar",
             "date": date,
             "collected": 1,
             "draft": "draft.md",
@@ -117,7 +117,7 @@ def test_daily_radar_json_uses_standard_envelope(monkeypatch):
     monkeypatch.setattr(
         "ai_clip.cli.workflows.daily_radar",
         lambda *a, **k: {
-            "workflow": "daily_radar",
+            "workflow": "daily-radar",
             "date": "2026-01-02",
             "collected": 4,
             "draft": "draft.md",
@@ -153,23 +153,23 @@ def test_collect_command_can_force(monkeypatch):
     assert "2 snapshot" in result.output
 
 
-def test_source_research_command(monkeypatch, tmp_path):
+def test_research_evidence_command(monkeypatch, tmp_path):
     runner = CliRunner()
 
     class Report:
         date = "2026-01-02"
         search_calls = 2
 
-    def fake_run_source_research(cfg, date=None):
+    def fake_run_research_evidence(cfg, date=None):
         assert date == "2026-01-02"
-        assert cfg.source_research.max_searches == 2
+        assert cfg.web_research.max_searches == 2
         return Report()
 
-    monkeypatch.setattr("ai_clip.cli.pipeline.run_source_research", fake_run_source_research)
+    monkeypatch.setattr("ai_clip.cli.pipeline.run_research_evidence", fake_run_research_evidence)
     result = runner.invoke(
         cli.app,
         [
-            "source-research",
+            "research-evidence",
             "--date",
             "2026-01-02",
             "--max-searches",
@@ -180,7 +180,7 @@ def test_source_research_command(monkeypatch, tmp_path):
     )
 
     assert result.exit_code == 0
-    assert "source-research" in result.output
+    assert "research-evidence" in result.output
     assert "2 search(es)" in result.output
 
 
@@ -188,17 +188,17 @@ def test_research_command(monkeypatch, tmp_path):
     runner = CliRunner()
     seen = {}
 
-    def fake_run_research(cfg, project, theme=""):
+    def fake_run_source_research(cfg, project, theme=""):
         seen["project"] = project
         seen["theme"] = theme
-        seen["max_searches"] = cfg.source_research.max_searches
+        seen["max_searches"] = cfg.web_research.max_searches
         return tmp_path / project / "research.md"
 
-    monkeypatch.setattr("ai_clip.cli.pipeline.run_research", fake_run_research)
+    monkeypatch.setattr("ai_clip.cli.pipeline.run_source_research", fake_run_source_research)
     result = runner.invoke(
         cli.app,
         [
-            "research",
+            "source-research",
             "-p",
             "demo",
             "--theme",
@@ -236,11 +236,11 @@ def test_source_draft_command_can_enable_research(monkeypatch, tmp_path):
             "url": url,
             "research": research,
             "theme": theme,
-            "max_searches": cfg.source_research.max_searches,
+            "max_searches": cfg.web_research.max_searches,
             "whisper_model": cfg.whisper.model_size,
             "resume": resume,
         })
-        return {"draft": "source_draft.md"}
+        return {"draft": "source-draft.md"}
 
     monkeypatch.setattr("ai_clip.cli.workflows.source_draft", fake_source_draft)
     result = runner.invoke(
@@ -273,7 +273,7 @@ def test_source_draft_command_can_enable_research(monkeypatch, tmp_path):
         "whisper_model": "small",
         "resume": False,
     }
-    assert "source_draft.md" in result.output
+    assert "source-draft.md" in result.output
 
 
 def test_original_command_can_enable_research(monkeypatch, tmp_path):
@@ -296,7 +296,7 @@ def test_original_command_can_enable_research(monkeypatch, tmp_path):
             "project": project,
             "theme": theme,
             "research": research,
-            "max_searches": cfg.source_research.max_searches,
+            "max_searches": cfg.web_research.max_searches,
         })
         return {"status": "done", "output": "out.mp4"}
 
@@ -327,22 +327,22 @@ def test_original_command_can_enable_research(monkeypatch, tmp_path):
     assert "out.mp4" in result.output
 
 
-def test_zack_selection_command(monkeypatch, tmp_path):
+def test_select_topic_command(monkeypatch, tmp_path):
     runner = CliRunner()
 
     class Selection:
         selected_index = 2
         topic = "selected topic"
 
-    def fake_run_zack_selection(cfg, date=None):
+    def fake_run_select_topic(cfg, date=None):
         assert date == "2026-01-02"
         return Selection()
 
-    monkeypatch.setattr("ai_clip.cli.pipeline.run_zack_selection", fake_run_zack_selection)
+    monkeypatch.setattr("ai_clip.cli.pipeline.run_select_topic", fake_run_select_topic)
     result = runner.invoke(
         cli.app,
         [
-            "zack-selection",
+            "select-topic",
             "--date",
             "2026-01-02",
             "--config",
@@ -351,7 +351,7 @@ def test_zack_selection_command(monkeypatch, tmp_path):
     )
 
     assert result.exit_code == 0
-    assert "zack-selection" in result.output
+    assert "select-topic" in result.output
     assert "selected topic" in result.output
 
 
@@ -368,15 +368,16 @@ def test_module_stage_commands_are_registered():
 
     assert result.exit_code == 0
     assert "collect" in result.output
-    assert "zack-ranking" in result.output
-    assert "source-content" in result.output
-    assert "content-rerank" in result.output
-    assert "zack-selection" in result.output
+    assert "rank-candidates" in result.output
+    assert "enrich-content" in result.output
+    assert "rerank-candidates" in result.output
+    assert "select-topic" in result.output
     assert "source-research" in result.output
-    assert "zack-draft" in result.output
+    assert "research-evidence" in result.output
+    assert "draft-script" in result.output
     assert "doctor" in result.output
-    assert "radar-status" in result.output
-    assert "radar-repair" in result.output
+    assert "daily-radar-diagnostics" in result.output
+    assert "daily-radar-repair" in result.output
 
 
 def test_scout_group_is_not_registered():
@@ -451,7 +452,7 @@ def test_radar_status_command_reads_run_artifacts(tmp_path):
 
     result = runner.invoke(
         cli.app,
-        ["radar-status", "--date", "2026-01-02", "--config", str(config)],
+        ["daily-radar-diagnostics", "--date", "2026-01-02", "--config", str(config)],
     )
 
     assert result.exit_code == 0
@@ -482,13 +483,13 @@ def test_radar_status_json_includes_run_identity(tmp_path):
 
     result = runner.invoke(
         cli.app,
-        ["radar-status", "--date", "2026-01-02", "--config", str(config), "--json"],
+        ["daily-radar-diagnostics", "--date", "2026-01-02", "--config", str(config), "--json"],
     )
 
     assert result.exit_code == 0
     envelope = json.loads(result.output)
     assert envelope["schema_version"] == 1
-    assert envelope["command"] == "radar-status"
+    assert envelope["command"] == "daily-radar-diagnostics"
     payload = envelope["result"]
     assert payload["run_id"] == "run-2"
     assert payload["attempt"] == 2
@@ -497,11 +498,11 @@ def test_radar_status_json_includes_run_identity(tmp_path):
         "candidates",
         "shortlist",
         "selection",
-        "source_research",
-        "zack_draft",
-        "pair_review",
-        "pair_rewrite",
-        "pair_verify",
+        "evidence-research",
+        "editorial-draft",
+        "review-artifact",
+        "rewrite-artifact",
+        "verify-artifact",
     }
 
 
@@ -547,7 +548,7 @@ def test_project_status_json_handles_missing_storyboard(tmp_path):
     assert {item["name"]: item["status"] for item in payload["artifacts"]} == {
         "research": "missing",
         "storyboard": "missing",
-        "source_draft": "missing",
+        "source-draft": "missing",
     }
 
 
@@ -572,11 +573,11 @@ def test_radar_repair_dry_run_and_apply(tmp_path):
 
     dry = runner.invoke(
         cli.app,
-        ["radar-repair", "--date", "2026-01-02", "--config", str(config)],
+        ["daily-radar-repair", "--date", "2026-01-02", "--config", str(config)],
     )
     applied = runner.invoke(
         cli.app,
-        ["radar-repair", "--date", "2026-01-02", "--config", str(config), "--apply"],
+        ["daily-radar-repair", "--date", "2026-01-02", "--config", str(config), "--apply"],
     )
 
     assert dry.exit_code == 0
@@ -609,7 +610,7 @@ def test_radar_feedback_records_explicit_decision(monkeypatch, tmp_path):
     result = runner.invoke(
         cli.app,
         [
-            "radar-feedback",
+            "daily-radar-feedback",
             "accept",
             "--date",
             "2026-01-02",
@@ -635,14 +636,14 @@ def test_run_status_json_navigates_project_run_artifacts(tmp_path):
     runner = CliRunner()
     config = tmp_path / "config.yaml"
     config.write_text(f"data_dir: {tmp_path.as_posix()}\n", encoding="utf-8")
-    output = tmp_path / "demo" / "source_draft.md"
+    output = tmp_path / "demo" / "source-draft.md"
     output.parent.mkdir(parents=True)
     output.write_text("draft", encoding="utf-8")
-    run_path = tmp_path / "demo" / "runs" / "source_draft.json"
+    run_path = tmp_path / "demo" / "runs" / "source-draft.json"
     run_path.parent.mkdir(parents=True)
     run_path.write_text(
         json.dumps({
-            "workflow": "source_draft",
+            "workflow": "source-draft",
             "project": "demo",
             "run_id": "run-1",
             "attempt": 1,
@@ -681,30 +682,38 @@ def test_run_status_json_navigates_project_run_artifacts(tmp_path):
 
 def test_pair_review_json_reports_bounded_quality_chain(monkeypatch, tmp_path):
     runner = CliRunner()
-    review = PairReviewReport(
-        artifact="source_draft",
-        source_path="source_draft.md",
+    review = ArtifactReviewReport(
+        artifact="source-draft",
+        source_path="source-draft.md",
         status="needs_review",
         reviewers=[ReviewerResult(role="logic", model="m1", ok=True, verdict="revise")],
     )
     verification = review.model_copy(update={
         "kind": "verify",
-        "source_path": "source_draft.revised.md",
+        "source_path": "source-draft.revised.md",
         "status": "passed",
     })
-    monkeypatch.setattr("ai_clip.cli.pipeline.run_pair_review", lambda *a, **k: review)
-    revised = tmp_path / "demo" / "source_draft.revised.md"
-    monkeypatch.setattr("ai_clip.cli.pipeline.run_pair_rewrite", lambda *a, **k: revised)
-    monkeypatch.setattr("ai_clip.cli.pipeline.run_pair_verify", lambda *a, **k: verification)
+    monkeypatch.setattr("ai_clip.cli.pipeline.run_artifact_review", lambda *a, **k: review)
+    revised = tmp_path / "demo" / "source-draft.revised.md"
+    monkeypatch.setattr("ai_clip.cli.pipeline.run_artifact_rewrite", lambda *a, **k: revised)
+    monkeypatch.setattr("ai_clip.cli.pipeline.run_artifact_verify", lambda *a, **k: verification)
 
     result = runner.invoke(
         cli.app,
-        ["pair-review", "-p", "demo", "--artifact", "source_draft", "--rewrite", "--json"],
+        [
+            "review-artifact",
+            "-p",
+            "demo",
+            "--artifact",
+            "source-draft",
+            "--rewrite",
+            "--json",
+        ],
     )
 
     assert result.exit_code == 0
     payload = json.loads(result.output)
-    assert payload["command"] == "pair-review"
+    assert payload["command"] == "review-artifact"
     assert payload["result"]["review_status"] == "needs_review"
     assert payload["result"]["revised"] == str(revised)
     assert payload["result"]["verification_status"] == "passed"

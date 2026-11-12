@@ -7,7 +7,7 @@ ai-clip 是一个把开源工具串成短视频流水线的**轻量编排器**�
 yt-dlp、faster-whisper、ComfyUI、ffmpeg、LLM/TTS API 等成熟工具。
 
 ```text
-discover -> download -> extract -> analyze -> research -> storyboard -> review -> assets -> voiceover -> assemble
+discover -> download -> extract -> analyze -> source-research -> storyboard -> storyboard-edit -> assets -> voiceover -> assemble
 ```
 
 详细文档:
@@ -15,7 +15,8 @@ discover -> download -> extract -> analyze -> research -> storyboard -> review -
 - [工作流说明](docs/workflows.md)
 - [Research 阶段](docs/research.md)
 - [Daily Radar 选题流程](docs/radar.md)
-- [Pair Review](docs/pair-review.md)
+- [Artifact Review](docs/artifact-review.md)
+- [命名规范](docs/naming.md)
 - [外部调用可靠性](docs/reliability.md)
 
 ## 设计原则
@@ -77,7 +78,7 @@ ai-clip source-draft "<clip-url>" -p demo --whisper-model small   # 长视频 CP
 项目级研究:
 
 ```bash
-ai-clip research -p demo --theme "AI 公司的生态位竞争" --max-searches 2
+ai-clip source-research -p demo --theme "AI 公司的生态位竞争" --max-searches 2
 ai-clip storyboard -p demo --theme "AI 公司的生态位竞争"
 ```
 
@@ -85,7 +86,7 @@ ai-clip storyboard -p demo --theme "AI 公司的生态位竞争"
 
 ```bash
 ai-clip daily-radar --top 3
-ai-clip radar-feedback accept --date 2026-07-09 --reason "选题角度合适"
+ai-clip daily-radar-feedback accept --date 2026-07-09 --reason "选题角度合适"
 ```
 
 ## 常用命令
@@ -95,17 +96,18 @@ ai-clip radar-feedback accept --date 2026-07-09 --reason "选题角度合适"
 | `ai-clip transcribe <url> -p P` | 下载、转写并导出 `.srt` / `.txt` |
 | `ai-clip teardown <url> -p P` | 下载、转写并拆解爆款公式 |
 | `ai-clip source-draft <url> -p P` | 单视频生成原创口播稿;默认只复用与本次 URL、参数、模型及上游输入匹配的产物,`--no-resume` 可强制重跑 |
-| `ai-clip research -p P --theme T` | 生成 `research.json` 和可编辑 `research.md` |
+| `ai-clip source-research -p P --theme T` | 生成 `research.json` 和可编辑 `research.md` |
 | `ai-clip storyboard -p P --theme T` | 生成分镜、素材 prompt 和 `storyboard.md` |
-| `ai-clip review -p P` / `--apply` | 往返口播、slideshow caption 和 remix 时间戳；校验 remix 总时长 |
-| `ai-clip pair-review -p P --artifact script --rewrite` | 多模型互审、单次改写并验证 |
+| `ai-clip storyboard-edit -p P` / `--apply` | 往返口播、slideshow caption 和 remix 时间戳；校验 remix 总时长 |
+| `ai-clip review-artifact -p P --artifact script --rewrite` | 多模型审查、单次改写并验证 |
 | `ai-clip status -p P` | 查看 artifact freshness 和素材缺失 |
 | `ai-clip status -p P --json` | 输出机器可读项目状态 |
 | `ai-clip assets -p P` | 生成缺失或已过期的图片素材，保留无 manifest 的人工图片 |
 | `ai-clip voiceover -p P` | 按镜头增量生成配音，保留无 manifest 的人工 WAV |
 | `ai-clip assemble -p P` | 合成最终 mp4 |
 | `ai-clip doctor` | 本地环境诊断 |
-| `ai-clip radar-feedback accept\|reject --date D` | 记录明确选题反馈，用于后续排序校准 |
+| `ai-clip daily-radar-feedback accept\|reject --date D` | 记录明确选题反馈，用于后续排序校准 |
+| `ai-clip migrate-names` / `--apply` | 预览或执行旧产物文件名迁移；不覆盖已有目标文件 |
 | `ai-clip run-status --workflow W -p P --json` | 查看一次运行的阶段、产物、历史目录和 API 用量 |
 
 ## 视频体裁

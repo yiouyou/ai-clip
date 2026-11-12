@@ -84,7 +84,7 @@ class RadarFeedbackEvent(BaseModel):
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
-class ZackSelection(BaseModel):
+class TopicSelection(BaseModel):
     date: str
     selected_video_id: str
     selected_index: int = 1
@@ -97,7 +97,7 @@ class ZackSelection(BaseModel):
     backup_video_ids: list[str] = Field(default_factory=list)
 
 
-class ZackDraft(BaseModel):
+class EditorialDraft(BaseModel):
     date: str
     title: str = ""
     markdown: str = ""

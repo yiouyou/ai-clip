@@ -122,6 +122,14 @@ class RadarPaths:
         return self.drafts_dir / f"{self.date}.revised.md"
 
     @property
+    def draft_review_json(self) -> Path:
+        return self.reviews_dir / f"{self.date}.editorial-draft.review.json"
+
+    @property
+    def draft_verification_json(self) -> Path:
+        return self.reviews_dir / f"{self.date}.editorial-draft.verify.json"
+
+    @property
     def run_status_json(self) -> Path:
         return self.runs_dir / f"{self.date}.json"
 

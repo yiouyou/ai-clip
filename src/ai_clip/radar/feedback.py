@@ -4,9 +4,9 @@ import json
 from pathlib import Path
 
 from ai_clip.core.artifacts import write_text_atomic
-from ai_clip.radar.models import RadarCandidates, RadarFeedbackEvent, RadarVideo, ZackSelection
+from ai_clip.radar.models import RadarCandidates, RadarFeedbackEvent, RadarVideo, TopicSelection
 from ai_clip.radar.storage import RadarPaths
-from ai_clip.zack_ranking import RankingFeedback
+from ai_clip.radar.ranking import RankingFeedback
 
 
 def read_feedback_events(path: Path) -> list[RadarFeedbackEvent]:
@@ -90,15 +90,15 @@ def _read_candidates(path: Path) -> RadarCandidates | None:
     return RadarCandidates.model_validate_json(path.read_text(encoding="utf-8"))
 
 
-def _read_selection(path: Path) -> ZackSelection | None:
+def _read_selection(path: Path) -> TopicSelection | None:
     if not path.exists():
         return None
-    return ZackSelection.model_validate_json(path.read_text(encoding="utf-8"))
+    return TopicSelection.model_validate_json(path.read_text(encoding="utf-8"))
 
 
 def _find_video(
     candidates: RadarCandidates | None,
-    selection: ZackSelection | None,
+    selection: TopicSelection | None,
     video_id: str,
 ) -> RadarVideo | None:
     if candidates:

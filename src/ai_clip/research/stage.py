@@ -15,8 +15,8 @@ from ai_clip.research_engine import (
     search_count,
     search_results_for_prompt,
 )
-from ai_clip.source_research.client import tavily_search
-from ai_clip.source_research.models import ResearchQuery
+from ai_clip.web_research.client import tavily_search
+from ai_clip.web_research.models import ResearchQuery
 
 _DEFAULT_FOCUS = [
     ("event_facts", "Verify factual claims, named entities, dates, and source context."),
@@ -51,7 +51,7 @@ def _generate_research(
     analysis: ViralAnalysis | None,
     theme: str,
 ) -> ProjectResearchReport:
-    max_searches = search_count(cfg.source_research.max_searches)
+    max_searches = search_count(cfg.web_research.max_searches)
     focus = _DEFAULT_FOCUS[:max_searches]
     query_text = chat(
         cfg.llm,
@@ -71,7 +71,7 @@ def _generate_research(
     )
     results = execute_searches(
         queries,
-        lambda query: tavily_search(query, cfg.source_research),
+        lambda query: tavily_search(query, cfg.web_research),
     )
 
     markdown = chat(

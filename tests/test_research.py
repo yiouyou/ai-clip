@@ -7,13 +7,13 @@ from ai_clip.core.models import Storyboard, Transcript, ViralAnalysis, VideoForm
 from ai_clip.core.paths import ProjectPaths, read_model, write_model
 from ai_clip.research.models import ProjectResearchReport
 from ai_clip.research.stage import generate_project_research, generate_topic_research
-from ai_clip.source_research.models import SearchResult
+from ai_clip.web_research.models import SearchResult
 
 
 def test_generate_project_research_uses_bounded_searches_and_synthesizes(monkeypatch):
     cfg = Config()
-    cfg.source_research.tavily_api_key = "tavily"
-    cfg.source_research.max_searches = 3
+    cfg.web_research.tavily_api_key = "tavily"
+    cfg.web_research.max_searches = 3
     calls = {"queries": [], "searches": []}
 
     def fake_chat(cfg, system, user):
@@ -58,7 +58,7 @@ def test_generate_project_research_uses_bounded_searches_and_synthesizes(monkeyp
 
 def test_generate_topic_research_does_not_require_source_material(monkeypatch):
     cfg = Config()
-    cfg.source_research.tavily_api_key = "tavily"
+    cfg.web_research.tavily_api_key = "tavily"
     prompts = []
 
     def fake_chat(cfg, system, user):
@@ -77,7 +77,7 @@ def test_generate_topic_research_does_not_require_source_material(monkeypatch):
     assert any("theme-only research; no source transcript" in prompt for prompt in prompts)
 
 
-def test_run_research_writes_project_artifacts(monkeypatch, tmp_path):
+def test_run_source_research_writes_project_artifacts(monkeypatch, tmp_path):
     cfg = Config(data_dir=str(tmp_path))
     pp = ProjectPaths(cfg.data_dir, "demo")
     pp.ensure()
@@ -92,14 +92,14 @@ def test_run_research_writes_project_artifacts(monkeypatch, tmp_path):
 
     monkeypatch.setattr("ai_clip.research.generate_project_research", fake_generate)
 
-    path = pipeline.run_research(cfg, "demo", theme="theme")
+    path = pipeline.run_source_research(cfg, "demo", theme="theme")
 
     assert path == pp.research_md
     assert pp.research_md.read_text(encoding="utf-8") == "# Research Brief\n\nok"
     assert read_model(pp.research_json, ProjectResearchReport).theme == "theme"
     assert artifact_manifest_path(pp.research_md).exists()
     manifest = read_artifact_manifest(pp.research_md)
-    assert manifest.stage == "research"
+    assert manifest.stage == "source-research"
     assert manifest.params["theme"] == "theme"
     assert str(pp.transcript_json) in manifest.inputs
 
@@ -198,5 +198,5 @@ def test_run_source_draft_injects_existing_research(monkeypatch, tmp_path):
     assert path == pp.source_draft_md
     assert pp.source_draft_md.read_text(encoding="utf-8") == "# draft"
     manifest = read_artifact_manifest(pp.source_draft_md)
-    assert manifest.stage == "source_draft"
+    assert manifest.stage == "source-draft"
     assert str(pp.research_md) in manifest.inputs

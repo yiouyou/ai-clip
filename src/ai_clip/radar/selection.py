@@ -4,16 +4,21 @@ import json
 
 from ai_clip.core.config import LLMConfig
 from ai_clip.core.llm import chat, extract_json
-from ai_clip.radar.models import RadarCandidates, RadarVideo, ZackSelection
-from ai_clip.zack_selection.prompts import ZACK_SELECTION_SYSTEM, ZACK_SELECTION_USER
+from ai_clip.radar.models import RadarCandidates, RadarVideo, TopicSelection
+from ai_clip.radar.selection_prompts import TOPIC_SELECTION_SYSTEM, TOPIC_SELECTION_USER
 
 
-def generate_zack_selection(candidates: RadarCandidates, cfg: LLMConfig) -> ZackSelection:
+def generate_topic_selection(
+    candidates: RadarCandidates,
+    cfg: LLMConfig,
+    editorial_profile: str = "default",
+) -> TopicSelection:
     text = chat(
         cfg,
-        system=ZACK_SELECTION_SYSTEM,
-        user=ZACK_SELECTION_USER.format(
+        system=TOPIC_SELECTION_SYSTEM,
+        user=TOPIC_SELECTION_USER.format(
             date=candidates.date,
+            editorial_profile=editorial_profile,
             videos=_videos_for_prompt(candidates.videos),
         ),
     )
@@ -21,14 +26,14 @@ def generate_zack_selection(candidates: RadarCandidates, cfg: LLMConfig) -> Zack
     return _selection_from_data(candidates, data)
 
 
-def fallback_selection(candidates: RadarCandidates) -> ZackSelection:
+def fallback_selection(candidates: RadarCandidates) -> TopicSelection:
     return _selection_from_data(candidates, {})
 
 
-def render_selection(selection: ZackSelection) -> str:
+def render_selection(selection: TopicSelection) -> str:
     focus = selection.research_focus or []
     lines = [
-        f"# Zack Selection {selection.date}",
+        f"# Topic Selection {selection.date}",
         "",
         f"- Selected index: {selection.selected_index}",
         f"- Selected video id: {selection.selected_video_id}",
@@ -54,7 +59,7 @@ def render_selection(selection: ZackSelection) -> str:
     return "\n".join(lines).strip() + "\n"
 
 
-def selection_for_prompt(selection: ZackSelection) -> str:
+def selection_for_prompt(selection: TopicSelection) -> str:
     return json.dumps({
         "selected_video_id": selection.selected_video_id,
         "selected_index": selection.selected_index,
@@ -68,15 +73,15 @@ def selection_for_prompt(selection: ZackSelection) -> str:
     }, ensure_ascii=False, indent=2)
 
 
-def _selection_from_data(candidates: RadarCandidates, data: dict) -> ZackSelection:
+def _selection_from_data(candidates: RadarCandidates, data: dict) -> TopicSelection:
     if not candidates.videos:
-        raise ValueError("no candidates available for zack-selection")
+        raise ValueError("no candidates available for topic selection")
     index = _selected_index(data, candidates.videos)
     selected = candidates.videos[index - 1]
     selected_id = selected.video_id
     topic = str(data.get("topic") or selected.title).strip()
     focus = _focus_list(data.get("research_focus"))
-    return ZackSelection(
+    return TopicSelection(
         date=candidates.date,
         selected_video_id=selected_id,
         selected_index=index,

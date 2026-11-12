@@ -1,6 +1,6 @@
-from ai_clip.source_content.video import (
+from ai_clip.content_enrichment.video import (
     VideoScript,
-    add_source_content,
+    enrich_video_content,
     download_video_audio,
     fetch_video_script,
     fetch_video_subtitles,
@@ -9,7 +9,7 @@ from ai_clip.source_content.video import (
 
 __all__ = [
     "VideoScript",
-    "add_source_content",
+    "enrich_video_content",
     "download_video_audio",
     "fetch_video_script",
     "fetch_video_subtitles",

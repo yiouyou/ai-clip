@@ -65,7 +65,7 @@ def read_radar_status(paths: RadarPaths) -> RadarStatusSummary:
         "research": str(paths.research_md),
         "draft": str(paths.draft_md),
         "revised_draft": str(paths.draft_revised_md),
-        "verification": str(paths.reviews_dir / f"{paths.date}_zack_draft_verify.json"),
+        "verification": str(paths.draft_verification_json),
         "feedback": str(paths.feedback_events_jsonl),
     }
     return RadarStatusSummary(

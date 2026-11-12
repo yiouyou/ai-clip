@@ -1,12 +1,12 @@
 from ai_clip.core.config import Config
 from ai_clip.core.models import Platform
-from ai_clip.radar.models import RadarVideo, ZackSelection
-from ai_clip.source_research.models import SearchResult
-from ai_clip.source_research.stage import generate_source_research
+from ai_clip.radar.models import RadarVideo, TopicSelection
+from ai_clip.web_research.models import SearchResult
+from ai_clip.radar.evidence_research import generate_evidence_research
 
 
-def test_generate_source_research_clamps_searches(monkeypatch):
-    selection = ZackSelection(
+def test_generate_evidence_research_clamps_searches(monkeypatch):
+    selection = TopicSelection(
         date="2026-01-02",
         selected_video_id="youtube:1",
         selected_index=1,
@@ -26,8 +26,8 @@ def test_generate_source_research_clamps_searches(monkeypatch):
     )
     cfg = Config()
     cfg.llm.api_key = "llm"
-    cfg.source_research.tavily_api_key = "tavily"
-    cfg.source_research.max_searches = 3
+    cfg.web_research.tavily_api_key = "tavily"
+    cfg.web_research.max_searches = 3
 
     replies = [
         """
@@ -50,10 +50,10 @@ def test_generate_source_research_clamps_searches(monkeypatch):
         seen_queries.append(query)
         return [SearchResult(query=query, title=f"title {query}", url=f"https://{query}.example")]
 
-    monkeypatch.setattr("ai_clip.source_research.stage.chat", fake_chat)
-    monkeypatch.setattr("ai_clip.source_research.stage.tavily_search", fake_search)
+    monkeypatch.setattr("ai_clip.radar.evidence_research.chat", fake_chat)
+    monkeypatch.setattr("ai_clip.radar.evidence_research.tavily_search", fake_search)
 
-    report = generate_source_research(selection, cfg)
+    report = generate_evidence_research(selection, cfg)
 
     assert seen_queries == ["query 1", "query 2", "query 3"]
     assert [query.angle for query in report.queries] == [
@@ -66,8 +66,8 @@ def test_generate_source_research_clamps_searches(monkeypatch):
     assert "Confirmed Facts" in report.markdown
 
 
-def test_generate_source_research_falls_back_to_top_title(monkeypatch):
-    selection = ZackSelection(
+def test_generate_evidence_research_falls_back_to_top_title(monkeypatch):
+    selection = TopicSelection(
         date="2026-01-02",
         selected_video_id="youtube:1",
         selected_index=1,
@@ -80,7 +80,7 @@ def test_generate_source_research_falls_back_to_top_title(monkeypatch):
         topic="Top Event Title",
     )
     cfg = Config()
-    cfg.source_research.max_searches = 1
+    cfg.web_research.max_searches = 1
     replies = [
         '{"queries": []}',
         "# Source Research\n\n## Confirmed Facts\n- ok",
@@ -94,10 +94,10 @@ def test_generate_source_research_falls_back_to_top_title(monkeypatch):
         seen_queries.append(query)
         return [SearchResult(query=query)]
 
-    monkeypatch.setattr("ai_clip.source_research.stage.chat", fake_chat)
-    monkeypatch.setattr("ai_clip.source_research.stage.tavily_search", fake_search)
+    monkeypatch.setattr("ai_clip.radar.evidence_research.chat", fake_chat)
+    monkeypatch.setattr("ai_clip.radar.evidence_research.tavily_search", fake_search)
 
-    report = generate_source_research(selection, cfg)
+    report = generate_evidence_research(selection, cfg)
 
     assert seen_queries == [
         "Top Event Title Verify who, what, when, official statements, and mainstream reporting."

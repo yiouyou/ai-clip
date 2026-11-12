@@ -5,10 +5,10 @@ from datetime import datetime, timedelta
 from ai_clip.core.config import Config
 from ai_clip.radar.collect import collect_channels, collect_channels_with_timeout, load_channels
 from ai_clip.radar.models import RadarBackfillResult, RadarCandidates, RadarSnapshot
+from ai_clip.radar.drafting import render_brief
+from ai_clip.radar.ranking import rank_videos
 from ai_clip.radar.storage import RadarPaths, write_json_model
 from ai_clip.radar.time import today_in_tz
-from ai_clip.zack_draft import render_brief
-from ai_clip.zack_ranking import rank_videos
 
 
 def run_backfill(

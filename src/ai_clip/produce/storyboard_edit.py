@@ -1,4 +1,4 @@
-"""Human review of the script (文案) between storyboard and voiceover/assemble.
+"""Human storyboard editing between generation and voiceover/assembly.
 
 The storyboard.json is the contract assemble reads, but hand-editing JSON (with
 Chinese narration) is awkward. So we round-trip through a friendly script.md:
@@ -17,14 +17,14 @@ _HEADER = re.compile(r"^##\s*shot\s*(\d+)\s*(?:\[([0-9.]+)\s*-\s*([0-9.]+)\])?",
 _CAPTION = re.compile(r"^Caption:\s*(.*)$", re.I)
 
 
-class ReviewValidationError(ValueError):
+class StoryboardEditError(ValueError):
     pass
 
 
 def to_script_md(sb: Storyboard) -> str:
     lines = [
         f"# Script: {sb.project}  (format: {sb.format})",
-        "# Edit the narration under each shot, then: ai-clip review -p "
+        "# Edit the narration under each shot, then: ai-clip storyboard-edit -p "
         f"{sb.project} --apply",
     ]
     if sb.format == VideoFormat.remix:
@@ -115,7 +115,7 @@ def _validate_duration(sb: Storyboard) -> None:
         return
     total = sum(shot.duration_sec for shot in sb.shots)
     if total > sb.target_duration_sec + 0.01:
-        raise ReviewValidationError(
-            f"reviewed remix duration {total:g}s exceeds target "
+        raise StoryboardEditError(
+            f"edited remix duration {total:g}s exceeds target "
             f"{sb.target_duration_sec:g}s; shorten or remove timestamp spans"
         )

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from ai_clip.core.config import Config
 from ai_clip.core.llm import chat
-from ai_clip.radar.models import RadarVideo, ZackSelection
-from ai_clip.source_research.client import tavily_search
-from ai_clip.source_research.models import ResearchQuery, SourceResearchReport
-from ai_clip.source_research.prompts import (
+from ai_clip.radar.models import RadarVideo, TopicSelection
+from ai_clip.web_research.client import tavily_search
+from ai_clip.web_research.models import ResearchQuery, EvidenceResearchReport
+from ai_clip.radar.evidence_prompts import (
     QUERY_SYSTEM,
     QUERY_USER,
     SYNTHESIS_SYSTEM,
@@ -20,7 +20,7 @@ from ai_clip.research_engine import (
     search_count,
     search_results_for_prompt,
 )
-from ai_clip.zack_selection.selector import selection_for_prompt
+from ai_clip.radar.selection import selection_for_prompt
 
 _DEFAULT_FOCUS = [
     ("event_facts", "Verify who, what, when, official statements, and mainstream reporting."),
@@ -29,8 +29,8 @@ _DEFAULT_FOCUS = [
 ]
 
 
-def generate_source_research(selection: ZackSelection, cfg: Config) -> SourceResearchReport:
-    max_searches = search_count(cfg.source_research.max_searches)
+def generate_evidence_research(selection: TopicSelection, cfg: Config) -> EvidenceResearchReport:
+    max_searches = search_count(cfg.web_research.max_searches)
     focus = _focus_plan(selection, max_searches)
     query_text = chat(
         cfg.llm,
@@ -50,7 +50,7 @@ def generate_source_research(selection: ZackSelection, cfg: Config) -> SourceRes
     )
     results = execute_searches(
         queries,
-        lambda query: tavily_search(query, cfg.source_research),
+        lambda query: tavily_search(query, cfg.web_research),
     )
 
     markdown = chat(
@@ -63,7 +63,7 @@ def generate_source_research(selection: ZackSelection, cfg: Config) -> SourceRes
             results=search_results_for_prompt(results),
         ),
     )
-    return SourceResearchReport(
+    return EvidenceResearchReport(
         date=selection.date,
         selected_video_id=selection.selected_video_id,
         topic=selection.topic,
@@ -75,7 +75,7 @@ def generate_source_research(selection: ZackSelection, cfg: Config) -> SourceRes
     )
 
 
-def _fallback_query(selection: ZackSelection, angle: str, description: str) -> ResearchQuery:
+def _fallback_query(selection: TopicSelection, angle: str, description: str) -> ResearchQuery:
     topic = selection.topic or selection.selected_video.title
     return ResearchQuery(
         angle=angle,
@@ -84,7 +84,7 @@ def _fallback_query(selection: ZackSelection, angle: str, description: str) -> R
     )
 
 
-def _focus_plan(selection: ZackSelection, max_searches: int) -> list[tuple[str, str]]:
+def _focus_plan(selection: TopicSelection, max_searches: int) -> list[tuple[str, str]]:
     return merge_focus(selection.research_focus, _DEFAULT_FOCUS, max_searches)
 
 

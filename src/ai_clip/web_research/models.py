@@ -19,7 +19,7 @@ class SearchResult(BaseModel):
     source: str = "tavily"
 
 
-class SourceResearchReport(BaseModel):
+class EvidenceResearchReport(BaseModel):
     date: str
     selected_video_id: str = ""
     topic: str = ""

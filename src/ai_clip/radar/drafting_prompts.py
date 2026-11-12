@@ -1,4 +1,4 @@
-ZACK_DRAFT_SYSTEM = (
+EDITORIAL_DRAFT_SYSTEM = (
     "You are an editorial producer for short-form talking-head videos. "
     "The creator has a biology background and likes explaining politics, economics, "
     "technology, AI, and society through biology, ecology, evolution, immune systems, "
@@ -7,13 +7,14 @@ ZACK_DRAFT_SYSTEM = (
     "items into one video."
 )
 
-ZACK_DRAFT_USER = """Create today's topic brief and talking-head draft ideas.
+EDITORIAL_DRAFT_USER = """Create today's topic brief and talking-head draft ideas.
 
 Date: {date}
+Editorial profile: {editorial_profile}
 Candidate videos:
 {videos}
 
-Zack selection:
+Topic selection:
 {selection}
 
 Source research:
@@ -21,7 +22,7 @@ Source research:
 
 Requirements:
 - Use the sources as trend signals, not as material to copy.
-- If zack-selection is available, write only for that selected topic. Do not
+- If a topic selection is available, write only for that selected topic. Do not
   re-select a different main topic unless the selection is internally impossible.
 - If source research is available, prefer its confirmed facts and safe framing
   over source-video title wording.

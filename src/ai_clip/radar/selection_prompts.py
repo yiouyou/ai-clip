@@ -1,4 +1,4 @@
-ZACK_SELECTION_SYSTEM = (
+TOPIC_SELECTION_SYSTEM = (
     "You are an editorial selector for a creator with a biology background. "
     "Choose exactly one daily topic from ranked source videos. The creator likes "
     "using biology, ecology, evolution, immune systems, complex systems, feedback "
@@ -6,9 +6,10 @@ ZACK_SELECTION_SYSTEM = (
     "technology, AI, and society. Do not merge unrelated candidates."
 )
 
-ZACK_SELECTION_USER = """Choose one main topic from today's candidates.
+TOPIC_SELECTION_USER = """Choose one main topic from today's candidates.
 
 Date: {date}
+Editorial profile: {editorial_profile}
 Candidate videos:
 {videos}
 

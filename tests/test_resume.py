@@ -108,7 +108,7 @@ def test_research_resume_rejects_changed_theme_and_upstream(monkeypatch, tmp_pat
         ),
     )
 
-    pipeline.run_research(cfg, "demo", theme="theme-a")
+    pipeline.run_source_research(cfg, "demo", theme="theme-a")
 
     assert pipeline.load_current_research(cfg, "demo", "theme-a") == paths.research_md
     assert pipeline.load_current_research(cfg, "demo", "theme-b") is None

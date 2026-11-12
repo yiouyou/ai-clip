@@ -80,7 +80,7 @@ def test_source_draft_workflow_runs_pipeline_stages(monkeypatch, tmp_path):
         allow_untracked_research=True,
     ):
         calls.append(("source_draft", project, intent, stance))
-        return "data/demo/source_draft.md"
+        return "data/demo/source-draft.md"
 
     monkeypatch.setattr("ai_clip.workflows.pipeline.run_download", fake_download)
     monkeypatch.setattr("ai_clip.workflows.pipeline.run_extract", fake_extract)
@@ -97,10 +97,10 @@ def test_source_draft_workflow_runs_pipeline_stages(monkeypatch, tmp_path):
     )
 
     assert result == {
-        "workflow": "source_draft",
+        "workflow": "source-draft",
         "hook": "hook",
-        "draft": "data/demo/source_draft.md",
-        "run_status": str(tmp_path / "demo" / "runs" / "source_draft.json"),
+        "draft": "data/demo/source-draft.md",
+        "run_status": str(tmp_path / "demo" / "runs" / "source-draft.json"),
     }
     assert calls == [
         ("download", "demo", "https://example.com/video"),
@@ -110,7 +110,7 @@ def test_source_draft_workflow_runs_pipeline_stages(monkeypatch, tmp_path):
     ]
 
 
-def test_source_draft_can_run_research_before_draft(monkeypatch, tmp_path):
+def test_source_draft_can_run_source_research_before_draft(monkeypatch, tmp_path):
     calls = []
     monkeypatch.setattr("ai_clip.workflows.pipeline.run_download", _record(calls, "download"))
     monkeypatch.setattr("ai_clip.workflows.pipeline.run_extract", _record(calls, "extract"))
@@ -120,13 +120,13 @@ def test_source_draft_can_run_research_before_draft(monkeypatch, tmp_path):
         or ViralAnalysis(clip_id=p, intent=i, hook="hook", formula="formula"),
     )
     monkeypatch.setattr(
-        "ai_clip.workflows.pipeline.run_research",
+        "ai_clip.workflows.pipeline.run_source_research",
         lambda c, p, theme="": calls.append(("research", theme)) or "research.md",
     )
     monkeypatch.setattr(
         "ai_clip.workflows.pipeline.run_source_draft",
         lambda c, p, intent=Intent.info, stance="", **kwargs: calls.append("source_draft")
-        or "source_draft.md",
+        or "source-draft.md",
     )
 
     result = workflows.source_draft(
@@ -137,7 +137,7 @@ def test_source_draft_can_run_research_before_draft(monkeypatch, tmp_path):
         theme="biology lens",
     )
 
-    assert result["draft"] == "source_draft.md"
+    assert result["draft"] == "source-draft.md"
     assert calls == ["download", "extract", "analyze", ("research", "biology lens"), "source_draft"]
 
 
@@ -158,7 +158,7 @@ def test_source_draft_reuses_existing_artifacts_by_default(monkeypatch, tmp_path
         encoding="utf-8",
     )
     (root / "research.md").write_text("research", encoding="utf-8")
-    (root / "source_draft.md").write_text("draft", encoding="utf-8")
+    (root / "source-draft.md").write_text("draft", encoding="utf-8")
 
     monkeypatch.setattr(
         "ai_clip.workflows.pipeline.load_current_download",
@@ -188,14 +188,14 @@ def test_source_draft_reuses_existing_artifacts_by_default(monkeypatch, tmp_path
     )
     monkeypatch.setattr(
         "ai_clip.workflows.pipeline.load_current_source_draft",
-        lambda *args, **kwargs: root / "source_draft.md",
+        lambda *args, **kwargs: root / "source-draft.md",
     )
 
     for name in [
         "run_download",
         "run_extract",
         "run_analyze",
-        "run_research",
+        "run_source_research",
         "run_source_draft",
     ]:
         monkeypatch.setattr("ai_clip.workflows.pipeline." + name, _record(calls, name))
@@ -208,7 +208,7 @@ def test_source_draft_reuses_existing_artifacts_by_default(monkeypatch, tmp_path
     )
 
     assert result["hook"] == "hook"
-    assert result["draft"] == str(root / "source_draft.md")
+    assert result["draft"] == str(root / "source-draft.md")
     assert calls == []
     status = json.loads(Path(result["run_status"]).read_text(encoding="utf-8"))
     assert [stage["status"] for stage in status["stages"]] == ["skipped"] * 5
@@ -231,7 +231,7 @@ def test_source_draft_no_resume_forces_stages(monkeypatch, tmp_path):
         '{"clip_id":"demo","intent":"info","hook":"old","formula":"old"}',
         encoding="utf-8",
     )
-    (root / "source_draft.md").write_text("old", encoding="utf-8")
+    (root / "source-draft.md").write_text("old", encoding="utf-8")
 
     monkeypatch.setattr("ai_clip.workflows.pipeline.run_download", _record(calls, "download"))
     monkeypatch.setattr("ai_clip.workflows.pipeline.run_extract", _record(calls, "extract"))
@@ -243,7 +243,7 @@ def test_source_draft_no_resume_forces_stages(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "ai_clip.workflows.pipeline.run_source_draft",
         lambda c, p, intent=Intent.info, stance="", **kwargs: calls.append("source_draft")
-        or "source_draft.md",
+        or "source-draft.md",
     )
 
     result = workflows.source_draft(
@@ -254,7 +254,7 @@ def test_source_draft_no_resume_forces_stages(monkeypatch, tmp_path):
     )
 
     assert result["hook"] == "new"
-    assert result["draft"] == "source_draft.md"
+    assert result["draft"] == "source-draft.md"
     assert calls == ["download", "extract", "analyze", "source_draft"]
 
 
@@ -279,7 +279,7 @@ def test_source_draft_changed_url_reruns_every_downstream_stage(monkeypatch, tmp
         '{"clip_id":"demo","intent":"info","hook":"old","formula":"old"}',
         encoding="utf-8",
     )
-    (root / "source_draft.md").write_text("old", encoding="utf-8")
+    (root / "source-draft.md").write_text("old", encoding="utf-8")
 
     monkeypatch.setattr(
         workflows.pipeline,
@@ -304,7 +304,7 @@ def test_source_draft_changed_url_reruns_every_downstream_stage(monkeypatch, tmp
     monkeypatch.setattr(
         workflows.pipeline,
         "run_source_draft",
-        lambda *args, **kwargs: calls.append("source_draft") or root / "source_draft.md",
+        lambda *args, **kwargs: calls.append("source_draft") or root / "source-draft.md",
     )
     monkeypatch.setattr(
         workflows.pipeline,
@@ -328,12 +328,12 @@ def test_source_draft_changed_url_reruns_every_downstream_stage(monkeypatch, tmp
 
 def test_source_draft_blocks_concurrent_project_run(tmp_path):
     cfg = Config(data_dir=str(tmp_path))
-    lock_path = tmp_path / "demo" / "runs" / "locks" / "source_draft.lock"
+    lock_path = tmp_path / "demo" / "runs" / "locks" / "source-draft.lock"
 
     from ai_clip.core.run_lock import RunLock
 
     with RunLock(lock_path, "held"):
-        with pytest.raises(RuntimeError, match="source_draft is already running"):
+        with pytest.raises(RuntimeError, match="source-draft is already running"):
             workflows.source_draft(cfg, "demo", "https://example.com/video")
 
 
@@ -363,11 +363,11 @@ def test_remix_full_auto(monkeypatch, tmp_path):
     ]
 
 
-def test_remix_can_run_research_before_storyboard(monkeypatch, tmp_path):
+def test_remix_can_run_source_research_before_storyboard(monkeypatch, tmp_path):
     calls = []
     for name in ["run_download", "run_extract", "run_analyze"]:
         monkeypatch.setattr(workflows.pipeline, name, _record(calls, name))
-    monkeypatch.setattr(workflows.pipeline, "run_research", _record(calls, "run_research", "r.md"))
+    monkeypatch.setattr(workflows.pipeline, "run_source_research", _record(calls, "run_source_research", "r.md"))
     monkeypatch.setattr(workflows.pipeline, "run_voiceover", _record(calls, "run_voiceover", {}))
     monkeypatch.setattr(
         workflows.pipeline,
@@ -387,7 +387,7 @@ def test_remix_can_run_research_before_storyboard(monkeypatch, tmp_path):
         "run_download",
         "run_extract",
         "run_analyze",
-        "run_research",
+        "run_source_research",
         "run_storyboard",
         "run_voiceover",
     ]
@@ -423,7 +423,7 @@ def test_original_needs_assets(monkeypatch, tmp_path):
     assert status["stages"][-1]["status"] == "waiting"
 
 
-def test_original_can_run_research_before_storyboard(monkeypatch, tmp_path):
+def test_original_can_run_source_research_before_storyboard(monkeypatch, tmp_path):
     calls = []
     sb = Storyboard(project="p", shots=[Shot(index=1)])
     monkeypatch.setattr(

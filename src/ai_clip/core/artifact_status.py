@@ -24,7 +24,7 @@ def project_artifact_statuses(paths: ProjectPaths) -> list[ProjectArtifactStatus
             _existing(paths.analysis_json, paths.transcript_json, paths.research_md),
         ),
         (
-            "source_draft",
+            "source-draft",
             paths.source_draft_md,
             _existing(paths.transcript_json, paths.analysis_json, paths.research_md),
         ),

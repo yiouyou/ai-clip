@@ -13,12 +13,16 @@ from ai_clip.radar.collect import (
 )
 from ai_clip.radar.feedback import apply_feedback_events, read_feedback_events
 from ai_clip.radar.models import (
+    EditorialDraft,
     RadarCandidates,
     RadarCollectReport,
     RadarSnapshot,
-    ZackDraft,
-    ZackSelection,
+    TopicSelection,
 )
+from ai_clip.radar.drafting import generate_editorial_draft, render_brief
+from ai_clip.radar.evidence_research import generate_evidence_research
+from ai_clip.radar.ranking import load_ranking_feedback, rank_videos, rerank_by_content
+from ai_clip.radar.selection import generate_topic_selection, render_selection
 from ai_clip.radar.storage import (
     RadarPaths,
     dedupe_snapshots,
@@ -30,11 +34,8 @@ from ai_clip.radar.storage import (
 )
 from ai_clip.radar.status import mark_stale, track_stage
 from ai_clip.radar.time import today_in_tz
-from ai_clip.source_content import add_source_content
-from ai_clip.source_research import SourceResearchReport, generate_source_research
-from ai_clip.zack_draft import generate_zack_draft, render_brief
-from ai_clip.zack_ranking import load_ranking_feedback, rank_videos, rerank_by_content
-from ai_clip.zack_selection import generate_zack_selection, render_selection
+from ai_clip.content_enrichment import enrich_video_content
+from ai_clip.web_research import EvidenceResearchReport
 
 
 def run_collect(cfg: Config, date: str | None = None, force: bool = False) -> int:
@@ -110,7 +111,7 @@ def _merge_forced_snapshots(
     return dedupe_snapshots(preserved + report.snapshots), len(preserved)
 
 
-def run_zack_ranking(
+def run_rank_candidates(
     cfg: Config,
     date: str | None = None,
     top_n: int | None = None,
@@ -121,7 +122,7 @@ def run_zack_ranking(
     paths.ensure()
     with track_stage(
         paths,
-        "zack-ranking",
+        "rank-candidates",
         inputs={
             "snapshots": str(paths.snapshot_jsonl),
             "feedback": cfg.radar.feedback_path,
@@ -146,7 +147,7 @@ def run_zack_ranking(
         write_json_model(paths.shortlist_json, candidates)
         _write_manifest(
             paths.shortlist_json,
-            stage="zack-ranking",
+            stage="rank-candidates",
             inputs=_radar_inputs(
                 paths.snapshot_jsonl,
                 Path(cfg.radar.feedback_path),
@@ -167,13 +168,13 @@ def run_zack_ranking(
         return candidates
 
 
-def run_source_content(cfg: Config, date: str | None = None) -> RadarCandidates:
+def run_enrich_content(cfg: Config, date: str | None = None) -> RadarCandidates:
     date = date or today_in_tz(cfg.radar.timezone)
     paths = RadarPaths(cfg.data_dir, date)
     paths.ensure()
     with track_stage(
         paths,
-        "source-content",
+        "enrich-content",
         inputs={
             "shortlist": str(paths.shortlist_json),
             "channels": cfg.radar.channels_path,
@@ -182,7 +183,7 @@ def run_source_content(cfg: Config, date: str | None = None) -> RadarCandidates:
         candidates = _read_candidates(paths.shortlist_json)
         channels = load_channels(cfg.radar.channels_path)
         radar_whisper = cfg.whisper.model_copy(update={"model_size": cfg.radar.transcribe_model_size})
-        enriched = add_source_content(
+        enriched = enrich_video_content(
             candidates.videos,
             channels,
             paths.source_content_dir,
@@ -193,7 +194,7 @@ def run_source_content(cfg: Config, date: str | None = None) -> RadarCandidates:
         write_json_model(paths.shortlist_json, updated)
         _write_manifest(
             paths.shortlist_json,
-            stage="source-content",
+            stage="enrich-content",
             inputs=_radar_inputs(
                 paths.snapshot_jsonl,
                 Path(cfg.radar.feedback_path),
@@ -225,13 +226,13 @@ def run_source_content(cfg: Config, date: str | None = None) -> RadarCandidates:
         return updated
 
 
-def run_content_rerank(cfg: Config, date: str | None = None) -> RadarCandidates:
+def run_rerank_candidates(cfg: Config, date: str | None = None) -> RadarCandidates:
     date = date or today_in_tz(cfg.radar.timezone)
     paths = RadarPaths(cfg.data_dir, date)
     paths.ensure()
     with track_stage(
         paths,
-        "content-rerank",
+        "rerank-candidates",
         inputs={"shortlist": str(paths.shortlist_json)},
     ) as stage:
         shortlist = _read_candidates(paths.shortlist_json)
@@ -243,7 +244,7 @@ def run_content_rerank(cfg: Config, date: str | None = None) -> RadarCandidates:
         write_json_model(paths.candidates_json, candidates)
         _write_manifest(
             paths.candidates_json,
-            stage="content-rerank",
+            stage="rerank-candidates",
             inputs=[paths.shortlist_json],
             params={"top_n": str(shortlist.top_n)},
         )
@@ -258,13 +259,13 @@ def run_content_rerank(cfg: Config, date: str | None = None) -> RadarCandidates:
         return candidates
 
 
-def run_zack_selection(cfg: Config, date: str | None = None) -> ZackSelection:
+def run_select_topic(cfg: Config, date: str | None = None) -> TopicSelection:
     date = date or today_in_tz(cfg.radar.timezone)
     paths = RadarPaths(cfg.data_dir, date)
     paths.ensure()
     with track_stage(
         paths,
-        "zack-selection",
+        "select-topic",
         inputs={"candidates": str(paths.candidates_json)},
     ) as stage:
         if paths.shortlist_json.exists():
@@ -274,27 +275,33 @@ def run_zack_selection(cfg: Config, date: str | None = None) -> ZackSelection:
                 inputs=[paths.shortlist_json],
                 params={"top_n": str(shortlist.top_n)},
             ):
-                run_content_rerank(cfg, date)
+                run_rerank_candidates(cfg, date)
         candidates = _read_candidates(paths.candidates_json)
         if not candidates.videos:
             raise ValueError(
-                f"no candidates available for zack-selection on {date}; "
+                f"no candidates available for topic selection on {date}; "
                 "collect/ranking produced an empty candidate set"
             )
-        with billing.account(paths.root, "zack_selection"):
-            selection = generate_zack_selection(candidates, cfg.llm)
+        with billing.account(paths.root, "select_topic"):
+            selection = generate_topic_selection(
+                candidates,
+                cfg.llm,
+                editorial_profile=cfg.radar.editorial_profile,
+            )
         write_json_model(paths.selection_json, selection)
         write_text_atomic(paths.selection_md, render_selection(selection), encoding="utf-8")
         _write_manifest(
             paths.selection_json,
-            stage="zack-selection",
+            stage="select-topic",
             inputs=_radar_inputs(paths.candidates_json),
+            params={"editorial_profile": cfg.radar.editorial_profile},
             model=cfg.llm.model,
         )
         _write_manifest(
             paths.selection_md,
-            stage="zack-selection",
+            stage="select-topic",
             inputs=_radar_inputs(paths.candidates_json),
+            params={"editorial_profile": cfg.radar.editorial_profile},
             model=cfg.llm.model,
         )
         stage.set(
@@ -310,36 +317,36 @@ def run_zack_selection(cfg: Config, date: str | None = None) -> ZackSelection:
         return selection
 
 
-def run_source_research(cfg: Config, date: str | None = None) -> SourceResearchReport:
+def run_research_evidence(cfg: Config, date: str | None = None) -> EvidenceResearchReport:
     date = date or today_in_tz(cfg.radar.timezone)
     paths = RadarPaths(cfg.data_dir, date)
     paths.ensure()
     with track_stage(
         paths,
-        "source-research",
+        "research-evidence",
         inputs={"selection": str(paths.selection_json)},
     ) as stage:
         selection = (
             _read_selection(paths.selection_json)
             if paths.selection_json.exists()
-            else run_zack_selection(cfg, date)
+            else run_select_topic(cfg, date)
         )
-        with billing.account(paths.root, "source_research"):
-            report = generate_source_research(selection, cfg)
+        with billing.account(paths.root, "research_evidence"):
+            report = generate_evidence_research(selection, cfg)
         write_json_model(paths.research_json, report)
         write_text_atomic(paths.research_md, report.markdown, encoding="utf-8")
         _write_manifest(
             paths.research_json,
-            stage="source-research",
+            stage="research-evidence",
             inputs=_radar_inputs(paths.selection_json),
-            params=_source_research_params(cfg),
+            params=_evidence_research_params(cfg),
             model=cfg.llm.model,
         )
         _write_manifest(
             paths.research_md,
-            stage="source-research",
+            stage="research-evidence",
             inputs=_radar_inputs(paths.selection_json),
-            params=_source_research_params(cfg),
+            params=_evidence_research_params(cfg),
             model=cfg.llm.model,
         )
         stage.set(
@@ -352,13 +359,13 @@ def run_source_research(cfg: Config, date: str | None = None) -> SourceResearchR
         return report
 
 
-def run_zack_draft(cfg: Config, date: str | None = None) -> ZackDraft:
+def run_draft_script(cfg: Config, date: str | None = None) -> EditorialDraft:
     date = date or today_in_tz(cfg.radar.timezone)
     paths = RadarPaths(cfg.data_dir, date)
     paths.ensure()
     with track_stage(
         paths,
-        "zack-draft",
+        "draft-script",
         inputs={
             "candidates": str(paths.candidates_json),
             "selection": str(paths.selection_json),
@@ -369,17 +376,18 @@ def run_zack_draft(cfg: Config, date: str | None = None) -> ZackDraft:
         selection = (
             _read_selection(paths.selection_json)
             if paths.selection_json.exists()
-            else run_zack_selection(cfg, date)
+            else run_select_topic(cfg, date)
         )
-        research_markdown = _current_source_research(paths, cfg)
-        with billing.account(paths.root, "zack_draft"):
-            markdown = generate_zack_draft(
+        research_markdown = _current_evidence_research(paths, cfg)
+        with billing.account(paths.root, "draft_script"):
+            markdown = generate_editorial_draft(
                 candidates,
                 cfg.llm,
                 selection=selection,
                 research_markdown=research_markdown,
+                editorial_profile=cfg.radar.editorial_profile,
             )
-        draft = ZackDraft(
+        draft = EditorialDraft(
             date=date,
             title=f"今日选题雷达 {date}",
             markdown=markdown,
@@ -394,15 +402,18 @@ def run_zack_draft(cfg: Config, date: str | None = None) -> ZackDraft:
         )
         _write_manifest(
             paths.brief_md,
-            stage="zack-draft",
+            stage="draft-script",
             inputs=_radar_inputs(paths.candidates_json),
             model=cfg.llm.model,
         )
         _write_manifest(
             paths.draft_md,
-            stage="zack-draft",
+            stage="draft-script",
             inputs=draft_inputs,
-            params={"research_used": str(bool(research_markdown))},
+            params={
+                "research_used": str(bool(research_markdown)),
+                "editorial_profile": cfg.radar.editorial_profile,
+            },
             model=cfg.llm.model,
         )
         stage.set(
@@ -417,19 +428,19 @@ def run_zack_draft(cfg: Config, date: str | None = None) -> ZackDraft:
 
 def _downstream_stage_names(paths: RadarPaths) -> list[str]:
     names = [
-        "zack-ranking",
-        "source-content",
-        "content-rerank",
-        "zack-selection",
-        "zack-draft",
+        "rank-candidates",
+        "enrich-content",
+        "rerank-candidates",
+        "select-topic",
+        "draft-script",
     ]
     if paths.research_json.exists() or paths.research_md.exists():
-        names.append("source-research")
-    review_path = paths.reviews_dir / f"{paths.date}_zack_draft_review.json"
+        names.append("research-evidence")
+    review_path = paths.draft_review_json
     if review_path.exists():
-        names.append("pair-review")
+        names.append("review-artifact")
     if paths.draft_revised_md.exists():
-        names.append("pair-rewrite")
+        names.append("rewrite-artifact")
     return names
 
 
@@ -437,23 +448,23 @@ def _read_candidates(path: Path) -> RadarCandidates:
     return RadarCandidates.model_validate(json.loads(path.read_text(encoding="utf-8")))
 
 
-def _read_selection(path: Path) -> ZackSelection:
-    return ZackSelection.model_validate(json.loads(path.read_text(encoding="utf-8")))
+def _read_selection(path: Path) -> TopicSelection:
+    return TopicSelection.model_validate(json.loads(path.read_text(encoding="utf-8")))
 
 
 def _radar_inputs(*paths: Path) -> list[Path]:
     return list(paths)
 
 
-def _source_research_params(cfg: Config) -> dict[str, str]:
-    return {"max_searches": str(cfg.source_research.max_searches)}
+def _evidence_research_params(cfg: Config) -> dict[str, str]:
+    return {"max_searches": str(cfg.web_research.max_searches)}
 
 
-def _current_source_research(paths: RadarPaths, cfg: Config) -> str:
+def _current_evidence_research(paths: RadarPaths, cfg: Config) -> str:
     if not artifact_matches(
         paths.research_md,
         inputs=[paths.selection_json],
-        params=_source_research_params(cfg),
+        params=_evidence_research_params(cfg),
         model=cfg.llm.model,
     ):
         return ""

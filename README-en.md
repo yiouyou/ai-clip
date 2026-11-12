@@ -8,7 +8,7 @@ device adaptation, prompts, cost logging, and workflow status; heavy work is del
 to yt-dlp, faster-whisper, ComfyUI, ffmpeg, LLM APIs, and TTS APIs.
 
 ```text
-discover -> download -> extract -> analyze -> research -> storyboard -> review -> assets -> voiceover -> assemble
+discover -> download -> extract -> analyze -> source-research -> storyboard -> storyboard-edit -> assets -> voiceover -> assemble
 ```
 
 Detailed docs:
@@ -16,7 +16,8 @@ Detailed docs:
 - [Workflows](docs/workflows.md)
 - [Research](docs/research.md)
 - [Daily Radar](docs/radar.md)
-- [Pair Review](docs/pair-review.md)
+- [Artifact Review](docs/artifact-review.md)
+- [Naming conventions](docs/naming.md)
 - [External-call reliability](docs/reliability.md)
 
 ## Principles
@@ -80,7 +81,7 @@ ai-clip source-draft "<clip-url>" -p demo --whisper-model small   # faster CPU t
 Project research:
 
 ```bash
-ai-clip research -p demo --theme "AI companies as ecological niches" --max-searches 2
+ai-clip source-research -p demo --theme "AI companies as ecological niches" --max-searches 2
 ai-clip storyboard -p demo --theme "AI companies as ecological niches"
 ```
 
@@ -88,7 +89,7 @@ Daily topic radar:
 
 ```bash
 ai-clip daily-radar --top 3
-ai-clip radar-feedback accept --date 2026-07-09 --reason "useful angle"
+ai-clip daily-radar-feedback accept --date 2026-07-09 --reason "useful angle"
 ```
 
 ## Common Commands
@@ -98,17 +99,18 @@ ai-clip radar-feedback accept --date 2026-07-09 --reason "useful angle"
 | `ai-clip transcribe <url> -p P` | Download, transcribe, and export `.srt` / `.txt` |
 | `ai-clip teardown <url> -p P` | Download, transcribe, and analyze viral formula |
 | `ai-clip source-draft <url> -p P` | Generate an original talking-head draft; reuses artifacts only when URL, parameters, model, and upstream inputs match, or use `--no-resume` |
-| `ai-clip research -p P --theme T` | Write `research.json` and editable `research.md` |
+| `ai-clip source-research -p P --theme T` | Write `research.json` and editable `research.md` |
 | `ai-clip storyboard -p P --theme T` | Generate storyboard, prompts, and `storyboard.md` |
-| `ai-clip review -p P` / `--apply` | Round-trip narration, slideshow captions, and remix timestamps; validate remix duration |
-| `ai-clip pair-review -p P --artifact script --rewrite` | Multi-model review, one rewrite, and verification |
+| `ai-clip storyboard-edit -p P` / `--apply` | Round-trip narration, slideshow captions, and remix timestamps; validate remix duration |
+| `ai-clip review-artifact -p P --artifact script --rewrite` | Multi-model review, one rewrite, and verification |
 | `ai-clip status -p P` | Show artifact freshness and missing assets |
 | `ai-clip status -p P --json` | Emit machine-readable project status |
 | `ai-clip assets -p P` | Generate missing or stale images while preserving unmanaged human assets |
 | `ai-clip voiceover -p P` | Incrementally synthesize per-shot voice while preserving unmanaged WAV files |
 | `ai-clip assemble -p P` | Assemble final mp4 |
 | `ai-clip doctor` | Diagnose local environment |
-| `ai-clip radar-feedback accept\|reject --date D` | Record explicit topic feedback for ranking calibration |
+| `ai-clip daily-radar-feedback accept\|reject --date D` | Record explicit topic feedback for ranking calibration |
+| `ai-clip migrate-names` / `--apply` | Preview or apply legacy artifact-name migration without overwriting destinations |
 | `ai-clip run-status --workflow W -p P --json` | Inspect run stages, artifacts, history, and API usage |
 
 ## Video Formats

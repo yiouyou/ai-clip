@@ -18,7 +18,7 @@ from ai_clip.radar.models import ChannelSpec, RadarVideo
 __all__ = [
     "VideoScript",
     "VideoScriptResult",
-    "add_source_content",
+    "enrich_video_content",
     "download_video_audio",
     "fetch_video_script",
     "fetch_video_script_report",
@@ -27,7 +27,7 @@ __all__ = [
 ]
 
 
-def add_source_content(
+def enrich_video_content(
     videos: list[RadarVideo],
     channels: list[ChannelSpec],
     out_dir: Path,

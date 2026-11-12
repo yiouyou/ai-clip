@@ -25,7 +25,7 @@ discover → download → extract → analyze → storyboard → [review] → (a
 | extract | `extract/extractor.py`(+ `subtitles.py`、`export.py`) | ffmpeg + faster-whisper | `--subs` 用视频自带字幕代替 whisper |
 | analyze | `analyze/`(analyzer + prompts) | LLM | 爆款拆解 → `ViralAnalysis`;`--intent info\|emotion\|sales` |
 | storyboard | `produce/storyboard.py` + `produce/formats/*` | LLM | 按体裁 → `Storyboard`(若干 `Shot`) |
-| review | `produce/review.py` | — | storyboard ↔ `script.md`;编辑口播、slideshow caption、remix 时间戳并校验时长 |
+| storyboard-edit | `produce/storyboard_edit.py` | — | storyboard ↔ `script.md`;编辑口播、slideshow caption、remix 时间戳并校验时长 |
 | assets | `produce/assets/*`(factory、comfyui、prompt_only) | ComfyUI / 人工 | talking_head/slideshow/montage 的配图 |
 | voiceover | `produce/voiceover.py` + `produce/tts/mimo.py` | MiMo TTS | 默认克隆源说话人音色 |
 | assemble | `produce/assemble.py`(+ `captions.py`、`core/fonts.py`) | ffmpeg | 拼接、配音、可选烧字幕 |
@@ -37,8 +37,9 @@ discover → download → extract → analyze → storyboard → [review] → (a
 `StageResult(value/status/outputs/metrics)`。项目 workflow 由共享 executor 统一写运行状态；Radar
 独立阶段保留自身 tracking，完整编排只套 execution envelope，不能再重复包 tracker。
 Radar 阶段、完整编排、回填分别在 `radar/stage.py`、`radar/workflow.py`、`radar/backfill.py`。
-Daily Radar 顺序是 `collect -> zack-ranking -> source-content -> content-rerank ->`
-`zack-selection -> [source-research] -> zack-draft -> [pair-review -> pair-rewrite -> pair-verify]`。
+Daily Radar 顺序是 `collect -> rank-candidates -> enrich-content -> rerank-candidates ->`
+`select-topic -> [research-evidence] -> draft-script ->`
+`[review-artifact -> rewrite-artifact -> verify-artifact]`。
 Ranking 先按频道/平台批次基线归一化并保留默认 9 个
 shortlist，获取脚本后再收敛到最终 Top 3；高事实风险且 Tavily 可用时自动触发最多 2 次搜索。
 明确的 accept/reject 反馈写入 `data/radar/feedback/events.jsonl`，参与后续 pool/tag 校准。
@@ -92,7 +93,7 @@ uv venv --python 3.12
 uv pip install -e ".[dev]"                      # 核心 + 测试
 uv pip install -e ".[download,extract]"         # 运行时重依赖(yt-dlp、faster-whisper)
 ruff check src tests        # lint(必须通过)
-pytest -q                   # 245 个测试,须保持全绿
+pytest -q                   # 266 个测试,须保持全绿
 ```
 需要 PATH 上有 **ffmpeg + ffprobe**。开发机的 `.env` 已配:`DEEPSEEK_API_KEY`、
 `OPENAI_API_KEY`、`GEMINI_API_KEY`、`MIMO_API_KEY`、`PEXELS_API_KEY`、`TAVILY_API_KEY`。

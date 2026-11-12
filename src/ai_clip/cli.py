@@ -94,12 +94,12 @@ def _project_status_payload(pp: ProjectPaths, cfg=None) -> dict:
 
 def _project_review_chains(pp: ProjectPaths, cfg) -> list[dict[str, object]]:
     from ai_clip.artifact_catalog import resolve_review_artifact
-    from ai_clip.pair.stage import pair_artifact_freshness
+    from ai_clip.artifact_review.stage import artifact_review_freshness
 
     chains = []
-    for artifact in ("source_draft", "script", "research"):
+    for artifact in ("source-draft", "script", "research"):
         target = resolve_review_artifact(cfg, pp.project, artifact)
-        freshness = pair_artifact_freshness(cfg, target)
+        freshness = artifact_review_freshness(cfg, target)
         chains.append({
             "artifact": artifact,
             "source": str(target.source),
@@ -168,6 +168,31 @@ def doctor(
         raise typer.Exit(code)
 
 
+@app.command("migrate-names")
+def migrate_names(
+    apply: bool = typer.Option(False, "--apply", help="apply migration; default is a dry run"),
+    config: str = typer.Option(None, "--config"),
+):
+    """Preview or apply the one-time naming migration."""
+    from ai_clip.migrations import migrate_artifact_names
+
+    results = migrate_artifact_names(_cfg(config).data_dir, apply=apply)
+    if not results:
+        console.print("[green]migrate-names[/] no legacy names found")
+        return
+    for item in results:
+        style = {
+            "conflict": "red",
+            "migrated": "green",
+            "planned": "yellow",
+        }[item.status]
+        console.print(
+            f"[{style}]{item.status}[/] {item.source} -> {item.destination}"
+        )
+    if any(item.status == "conflict" for item in results):
+        raise typer.Exit(2)
+
+
 @stage_command(app, "collect")
 def collect(
     workflow: str = typer.Option("daily-radar", "--workflow"),
@@ -197,62 +222,62 @@ def collect(
     console.print(f"[green]collect[/] {count} snapshot(s)")
 
 
-@stage_command(app, "zack-ranking")
-def zack_ranking(
+@stage_command(app, "rank-candidates")
+def rank_candidates(
     workflow: str = typer.Option("daily-radar", "--workflow"),
     date: str = typer.Option(None, "--date", help="YYYY-MM-DD; defaults to today"),
     top: int = typer.Option(None, "--top"),
     config: str = typer.Option(None, "--config"),
 ):
-    """Rank daily-radar snapshots with Zack's topic-selection policy."""
+    """Rank daily-radar snapshots with the configured editorial policy."""
     _require_daily_radar(workflow)
-    candidates = pipeline.run_zack_ranking(_cfg(config), date, top)
-    console.print(f"[green]zack-ranking[/] top {len(candidates.videos)} for {candidates.date}")
+    candidates = pipeline.run_rank_candidates(_cfg(config), date, top)
+    console.print(f"[green]rank-candidates[/] top {len(candidates.videos)} for {candidates.date}")
 
 
-@stage_command(app, "source-content")
-def source_content(
+@stage_command(app, "enrich-content")
+def enrich_content(
     workflow: str = typer.Option("daily-radar", "--workflow"),
     date: str = typer.Option(None, "--date", help="YYYY-MM-DD; defaults to today"),
     config: str = typer.Option(None, "--config"),
 ):
     """Fetch available scripts/subtitles for ranked candidates."""
     _require_daily_radar(workflow)
-    candidates = pipeline.run_source_content(_cfg(config), date)
+    candidates = pipeline.run_enrich_content(_cfg(config), date)
     with_script = sum(1 for video in candidates.videos if video.transcript_text)
-    console.print(f"[green]source-content[/] scripts {with_script}/{len(candidates.videos)}")
+    console.print(f"[green]enrich-content[/] scripts {with_script}/{len(candidates.videos)}")
 
 
-@stage_command(app, "content-rerank")
-def content_rerank(
+@stage_command(app, "rerank-candidates")
+def rerank_candidates(
     workflow: str = typer.Option("daily-radar", "--workflow"),
     date: str = typer.Option(None, "--date", help="YYYY-MM-DD; defaults to today"),
     config: str = typer.Option(None, "--config"),
 ):
     """Rerank an enriched shortlist into the final daily candidates."""
     _require_daily_radar(workflow)
-    candidates = pipeline.run_content_rerank(_cfg(config), date)
+    candidates = pipeline.run_rerank_candidates(_cfg(config), date)
     console.print(
-        f"[green]content-rerank[/] top {len(candidates.videos)} for {candidates.date}"
+        f"[green]rerank-candidates[/] top {len(candidates.videos)} for {candidates.date}"
     )
 
 
-@stage_command(app, "zack-selection")
-def zack_selection(
+@stage_command(app, "select-topic")
+def select_topic(
     workflow: str = typer.Option("daily-radar", "--workflow"),
     date: str = typer.Option(None, "--date", help="YYYY-MM-DD; defaults to today"),
     config: str = typer.Option(None, "--config"),
 ):
     """Select one daily-radar topic before research and drafting."""
     _require_daily_radar(workflow)
-    selection = pipeline.run_zack_selection(_cfg(config), date)
+    selection = pipeline.run_select_topic(_cfg(config), date)
     console.print(
-        f"[green]zack-selection[/] #{selection.selected_index} {selection.topic}"
+        f"[green]select-topic[/] #{selection.selected_index} {selection.topic}"
     )
 
 
-@stage_command(app, "source-research")
-def source_research(
+@stage_command(app, "research-evidence")
+def research_evidence(
     workflow: str = typer.Option("daily-radar", "--workflow"),
     date: str = typer.Option(None, "--date", help="YYYY-MM-DD; defaults to today"),
     max_searches: int = typer.Option(None, "--max-searches", help="Tavily searches; clamped to 1-3"),
@@ -262,22 +287,22 @@ def source_research(
     _require_daily_radar(workflow)
     cfg = _cfg(config)
     if max_searches is not None:
-        cfg.source_research.max_searches = search_count(max_searches)
+        cfg.web_research.max_searches = search_count(max_searches)
     try:
-        report = pipeline.run_source_research(cfg, date)
+        report = pipeline.run_research_evidence(cfg, date)
     except Exception as exc:
-        console.print(f"[red]source-research failed[/] — {exc}")
+        console.print(f"[red]research-evidence failed[/] — {exc}")
         raise typer.Exit(1) from exc
     from ai_clip.radar.storage import RadarPaths
 
     paths = RadarPaths(cfg.data_dir, report.date)
     console.print(
-        f"[green]source-research[/] {report.search_calls} search(es) -> {paths.research_md}"
+        f"[green]research-evidence[/] {report.search_calls} search(es) -> {paths.research_md}"
     )
 
 
-@stage_command(app, "zack-draft")
-def zack_draft(
+@stage_command(app, "draft-script")
+def draft_script(
     workflow: str = typer.Option("daily-radar", "--workflow"),
     date: str = typer.Option(None, "--date", help="YYYY-MM-DD; defaults to today"),
     config: str = typer.Option(None, "--config"),
@@ -286,18 +311,18 @@ def zack_draft(
     _require_daily_radar(workflow)
     cfg = _cfg(config)
     try:
-        draft = pipeline.run_zack_draft(cfg, date)
+        draft = pipeline.run_draft_script(cfg, date)
     except LLMError as exc:
-        console.print(f"[red]zack-draft failed[/] — {exc}")
+        console.print(f"[red]draft-script failed[/] — {exc}")
         raise typer.Exit(1) from exc
     from ai_clip.radar.storage import RadarPaths
 
     paths = RadarPaths(cfg.data_dir, draft.date)
-    console.print(f"[green]zack-draft[/] -> {paths.draft_md}")
+    console.print(f"[green]draft-script[/] -> {paths.draft_md}")
 
 
-@app.command("radar-status")
-def radar_status(
+@app.command("daily-radar-diagnostics")
+def daily_radar_diagnostics(
     date: str = typer.Option(None, "--date", help="YYYY-MM-DD; defaults to today"),
     json_output: bool = typer.Option(False, "--json", help="emit machine-readable JSON"),
     config: str = typer.Option(None, "--config"),
@@ -328,7 +353,7 @@ def radar_status(
             ],
             "usage": summary.usage,
         }
-        _emit_json("radar-status", payload, status=summary.status)
+        _emit_json("daily-radar-diagnostics", payload, status=summary.status)
         return
     console.print(f"[green]daily-radar[/] {summary.date}: {summary.status}")
     if summary.run_id:
@@ -413,8 +438,8 @@ def run_status(
         console.print(table)
 
 
-@app.command("radar-repair")
-def radar_repair(
+@app.command("daily-radar-repair")
+def daily_radar_repair(
     date: str = typer.Option(None, "--date", help="YYYY-MM-DD; defaults to today"),
     apply: bool = typer.Option(False, "--apply", help="remove clearly invalid artifacts"),
     config: str = typer.Option(None, "--config"),
@@ -432,8 +457,8 @@ def radar_repair(
         console.print("[green]nothing to repair[/]")
 
 
-@app.command("radar-feedback")
-def radar_feedback(
+@app.command("daily-radar-feedback")
+def daily_radar_feedback(
     decision: str = typer.Argument(..., help="accept or reject"),
     date: str = typer.Option(None, "--date", help="YYYY-MM-DD; defaults to today"),
     video_id: str = typer.Option("", "--video-id", help="defaults to the selected video"),
@@ -448,10 +473,10 @@ def radar_feedback(
     try:
         event = record_feedback(paths, decision, video_id=video_id, reason=reason)
     except ValueError as exc:
-        console.print(f"[red]radar-feedback failed[/] — {exc}")
+        console.print(f"[red]daily-radar-feedback failed[/] — {exc}")
         raise typer.Exit(1) from exc
     console.print(
-        f"[green]radar-feedback[/] {event.decision} {event.video_id} -> "
+        f"[green]daily-radar-feedback[/] {event.decision} {event.video_id} -> "
         f"{paths.feedback_events_jsonl}"
     )
 
@@ -503,8 +528,8 @@ def daily_radar(
     channel_workers: int = typer.Option(
         None, "--channel-workers", help="parallel channel collectors when timeout is enabled"
     ),
-    review: bool = typer.Option(False, "--review", help="run pair-review on zack-draft"),
-    rewrite: bool = typer.Option(False, "--rewrite", help="write a revised draft after pair-review"),
+    review: bool = typer.Option(False, "--review", help="review the editorial draft"),
+    rewrite: bool = typer.Option(False, "--rewrite", help="write and verify a revised draft"),
     json_output: bool = typer.Option(False, "--json", help="emit machine-readable JSON"),
     config: str = typer.Option(None, "--config"),
 ):
@@ -515,7 +540,7 @@ def daily_radar(
     if channel_workers is not None:
         cfg.radar.channel_workers = channel_workers
     if research_searches is not None:
-        cfg.source_research.max_searches = search_count(research_searches)
+        cfg.web_research.max_searches = search_count(research_searches)
     try:
         result = workflows.daily_radar(
             cfg,
@@ -539,11 +564,11 @@ def daily_radar(
     if result.get("run_status"):
         console.print(f"[green]run-status[/] -> {result['run_status']}")
     if result.get("review"):
-        console.print(f"[green]pair-review[/] -> {result['review']}")
+        console.print(f"[green]review-artifact[/] -> {result['review']}")
     if result.get("revised_draft"):
-        console.print(f"[green]pair-rewrite[/] -> {result['revised_draft']}")
+        console.print(f"[green]rewrite-artifact[/] -> {result['revised_draft']}")
     if result.get("verification"):
-        console.print(f"[green]pair-verify[/] -> {result['verification']}")
+        console.print(f"[green]verify-artifact[/] -> {result['verification']}")
 
 
 @stage_command(app, "discover")
@@ -614,8 +639,8 @@ def analyze(
     console.print(f"[green]analyzed[/] ({a.intent}) hook: {a.hook[:80]}")
 
 
-@stage_command(app, "research")
-def research(
+@stage_command(app, "source-research")
+def source_research(
     project: str = typer.Option(..., "--project", "-p"),
     theme: str = typer.Option("", "--theme"),
     max_searches: int = typer.Option(
@@ -628,13 +653,13 @@ def research(
     """Research source facts/context before storyboard; writes editable research.md."""
     cfg = _cfg(config)
     if max_searches is not None:
-        cfg.source_research.max_searches = search_count(max_searches)
+        cfg.web_research.max_searches = search_count(max_searches)
     try:
-        path = pipeline.run_research(cfg, project, theme=theme)
+        path = pipeline.run_source_research(cfg, project, theme=theme)
     except Exception as exc:
-        console.print(f"[red]research failed[/] — {exc}")
+        console.print(f"[red]source-research failed[/] — {exc}")
         raise typer.Exit(1) from exc
-    console.print(f"[green]research[/] -> {path}")
+    console.print(f"[green]source-research[/] -> {path}")
 
 
 @stage_command(app, "storyboard")
@@ -716,8 +741,8 @@ def assets(
     console.print(f"[green]assets[/] generated {generated} image(s)")
 
 
-@stage_command(app, "review")
-def review(
+@stage_command(app, "storyboard-edit")
+def storyboard_edit(
     project: str = typer.Option(..., "--project", "-p"),
     apply: bool = typer.Option(False, "--apply", help="parse edited script.md back into storyboard"),
     config: str = typer.Option(None, "--config"),
@@ -725,45 +750,43 @@ def review(
     """Export an editable script.md (the 文案), or --apply edits back to storyboard."""
     cfg = _cfg(config)
     if apply:
-        from ai_clip.produce.review import ReviewValidationError
+        from ai_clip.produce.storyboard_edit import StoryboardEditError
 
         try:
-            sb = pipeline.run_review_apply(cfg, project)
-        except ReviewValidationError as exc:
-            console.print(f"[red]review rejected[/]: {exc}")
+            sb = pipeline.run_storyboard_edit_apply(cfg, project)
+        except StoryboardEditError as exc:
+            console.print(f"[red]storyboard edit rejected[/]: {exc}")
             raise typer.Exit(2) from exc
         console.print(f"[green]applied[/] script -> storyboard ({len(sb.shots)} shots)")
     else:
-        path = pipeline.run_review_export(cfg, project)
+        path = pipeline.run_storyboard_edit_export(cfg, project)
         console.print(
             f"[green]script[/] -> {path}\n"
             "[yellow]Edit narration, slideshow captions, or remix timestamps, then:[/] "
-            f"ai-clip review -p {project} --apply"
+            f"ai-clip storyboard-edit -p {project} --apply"
         )
 
 
-@stage_command(app, "pair-review")
-def pair_review(
+@stage_command(app, "review-artifact")
+def review_artifact(
     project: str = typer.Option("radar", "--project", "-p"),
     artifact: str = typer.Option("storyboard", "--artifact"),
-    date: str = typer.Option(None, "--date", help="YYYY-MM-DD, required for zack_draft"),
+    date: str = typer.Option(None, "--date", help="YYYY-MM-DD, required for editorial-draft"),
     rewrite: bool = typer.Option(False, "--rewrite", help="write a revised draft after review"),
     json_output: bool = typer.Option(False, "--json", help="emit machine-readable JSON"),
     config: str = typer.Option(None, "--config"),
 ):
     """Run two-model review over a text artifact."""
     cfg = _cfg(config)
-    try:
-        report = pipeline.run_pair_review(cfg, project, artifact, run_date=date)
-    except Exception as exc:
-        console.print(f"[red]pair-review failed[/] — {exc}")
-        raise typer.Exit(1) from exc
-    if report.artifact == "zack_draft":
-        from ai_clip.radar.storage import RadarPaths
+    from ai_clip.artifact_catalog import resolve_review_artifact
 
-        out = RadarPaths(cfg.data_dir, date or "").reviews_dir / f"{date}_zack_draft_review.json"
-    else:
-        out = ProjectPaths(cfg.data_dir, project).reviews_dir / f"{report.artifact}_review.json"
+    try:
+        target = resolve_review_artifact(cfg, project, artifact, date)
+        report = pipeline.run_artifact_review(cfg, project, artifact, run_date=date)
+    except Exception as exc:
+        console.print(f"[red]artifact review failed[/] — {exc}")
+        raise typer.Exit(1) from exc
+    out = target.review
     models = ", ".join(r.model or "none" for r in report.reviewers)
     result = {
         "review": str(out),
@@ -774,10 +797,10 @@ def pair_review(
         "verification_status": "",
     }
     if not json_output:
-        console.print(f"[green]pair-review[/] {report.status} via {models} -> {out}")
+        console.print(f"[green]review-artifact[/] {report.status} via {models} -> {out}")
     if rewrite:
         try:
-            revised = pipeline.run_pair_rewrite(
+            revised = pipeline.run_artifact_rewrite(
                 cfg,
                 project,
                 artifact,
@@ -785,39 +808,30 @@ def pair_review(
                 run_date=date,
             )
         except Exception as exc:
-            console.print(f"[red]pair-rewrite failed[/] — {exc}")
+            console.print(f"[red]artifact rewrite failed[/] — {exc}")
             raise typer.Exit(1) from exc
         result["revised"] = str(revised)
         if not json_output:
-            console.print(f"[green]pair-rewrite[/] -> {revised}")
+            console.print(f"[green]rewrite-artifact[/] -> {revised}")
         try:
-            verification = pipeline.run_pair_verify(
+            verification = pipeline.run_artifact_verify(
                 cfg,
                 project,
                 artifact,
                 run_date=date,
             )
         except Exception as exc:
-            console.print(f"[red]pair-verify failed[/] — {exc}")
+            console.print(f"[red]artifact verification failed[/] — {exc}")
             raise typer.Exit(1) from exc
         verify_models = ", ".join(r.model or "none" for r in verification.reviewers)
         result["verification_status"] = verification.status
-        if report.artifact == "zack_draft":
-            result["verification"] = str(
-                RadarPaths(cfg.data_dir, date or "").reviews_dir
-                / f"{date}_zack_draft_verify.json"
-            )
-        else:
-            result["verification"] = str(
-                ProjectPaths(cfg.data_dir, project).reviews_dir
-                / f"{report.artifact}_verify.json"
-            )
+        result["verification"] = str(target.verification or "")
         if not json_output:
             console.print(
-                f"[green]pair-verify[/] {verification.status} via {verify_models}"
+                f"[green]verify-artifact[/] {verification.status} via {verify_models}"
             )
     if json_output:
-        _emit_json("pair-review", result, status=report.status)
+        _emit_json("review-artifact", result, status=report.status)
 
 
 @stage_command(app, "voiceover")
@@ -898,7 +912,7 @@ def source_draft(
     if whisper_model:
         cfg.whisper.model_size = whisper_model
     if research_searches is not None:
-        cfg.source_research.max_searches = search_count(research_searches)
+        cfg.web_research.max_searches = search_count(research_searches)
     r = workflows.source_draft(
         cfg,
         project,
@@ -935,7 +949,7 @@ def remix(
     cfg = _cfg(config)
     cfg.burn_captions = captions or cfg.burn_captions
     if research_searches is not None:
-        cfg.source_research.max_searches = search_count(research_searches)
+        cfg.web_research.max_searches = search_count(research_searches)
     r = workflows.remix(
         cfg, project, url, theme, intent=intent, stance=stance,
         product=load_product(product), duration=duration, n_shots=shots,
@@ -968,7 +982,7 @@ def original(
     cfg = _cfg(config)
     cfg.burn_captions = captions or cfg.burn_captions
     if research_searches is not None:
-        cfg.source_research.max_searches = search_count(research_searches)
+        cfg.web_research.max_searches = search_count(research_searches)
     r = workflows.original(
         cfg, project, theme, fmt=fmt, intent=intent, stance=stance,
         product=load_product(product), duration=duration, n_shots=shots,

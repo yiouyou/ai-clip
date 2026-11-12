@@ -4,7 +4,7 @@ from ai_clip.core.artifacts import artifact_manifest_path
 from ai_clip.core.config import WhisperConfig
 from ai_clip.extract.remote import VideoScript, fetch_video_script_report, write_cached_script
 from ai_clip.research_engine import align_queries, execute_searches, search_count
-from ai_clip.source_research.models import ResearchQuery, SearchResult
+from ai_clip.web_research.models import ResearchQuery, SearchResult
 
 
 def test_research_engine_caps_searches_and_aligns_focus():

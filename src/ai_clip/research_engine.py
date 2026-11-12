@@ -4,7 +4,7 @@ from collections.abc import Callable
 import json
 
 from ai_clip.core.llm import extract_json
-from ai_clip.source_research.models import ResearchQuery, SearchResult
+from ai_clip.web_research.models import ResearchQuery, SearchResult
 
 MAX_SEARCHES_HARD_CAP = 3
 Focus = tuple[str, str]

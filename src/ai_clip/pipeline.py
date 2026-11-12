@@ -20,15 +20,15 @@ from ai_clip.core.models import (
     ViralAnalysis,
     VideoFormat,
 )
-from ai_clip.pair.models import PairReviewReport
+from ai_clip.artifact_review.models import ArtifactReviewReport
 from ai_clip.radar.models import (
+    EditorialDraft,
     RadarBackfillResult,
     RadarCandidates,
     RadarRunResult,
-    ZackDraft,
-    ZackSelection,
+    TopicSelection,
 )
-from ai_clip.source_research import SourceResearchReport
+from ai_clip.web_research import EvidenceResearchReport
 from ai_clip.core.paths import ProjectPaths, read_model, write_model
 from ai_clip.core.artifacts import artifact_manifest_path, write_artifact_manifest, write_text_atomic
 from ai_clip.discover import discover as discover_stage
@@ -140,13 +140,13 @@ def run_analyze(
     return analysis
 
 
-def run_research(cfg: Config, project: str, theme: str = "") -> Path:
+def run_source_research(cfg: Config, project: str, theme: str = "") -> Path:
     from ai_clip.research import generate_project_research
 
     pp = _paths(cfg, project)
     transcript = read_model(pp.transcript_json, Transcript)
     analysis = read_model(pp.analysis_json, ViralAnalysis) if pp.analysis_json.exists() else None
-    with billing.account(pp.root, "research"):
+    with billing.account(pp.root, "source_research"):
         report = generate_project_research(
             transcript=transcript,
             cfg=cfg,
@@ -159,14 +159,14 @@ def run_research(cfg: Config, project: str, theme: str = "") -> Path:
     params = _research_params(cfg, theme, "source")
     write_artifact_manifest(
         pp.research_json,
-        stage="research",
+        stage="source-research",
         inputs=inputs,
         params=params,
         model=cfg.llm.model,
     )
     write_artifact_manifest(
         pp.research_md,
-        stage="research",
+        stage="source-research",
         inputs=inputs,
         params=params,
         model=cfg.llm.model,
@@ -321,7 +321,7 @@ def run_source_draft(
     params = _source_draft_params(intent, stance, bool(research_path))
     write_artifact_manifest(
         pp.source_draft_md,
-        stage="source_draft",
+        stage="source-draft",
         inputs=inputs,
         params=params,
         model=cfg.llm.model,
@@ -374,9 +374,9 @@ def run_assets(cfg: Config, project: str) -> int:
     return generated
 
 
-def run_review_export(cfg: Config, project: str):
+def run_storyboard_edit_export(cfg: Config, project: str):
     """Write an editable script.md from storyboard.json."""
-    from ai_clip.produce.review import to_script_md
+    from ai_clip.produce.storyboard_edit import to_script_md
 
     pp = _paths(cfg, project)
     sb = read_model(pp.storyboard_json, Storyboard)
@@ -384,9 +384,9 @@ def run_review_export(cfg: Config, project: str):
     return pp.script_md
 
 
-def run_review_apply(cfg: Config, project: str) -> Storyboard:
+def run_storyboard_edit_apply(cfg: Config, project: str) -> Storyboard:
     """Parse edited script.md back into storyboard.json."""
-    from ai_clip.produce.review import apply_script_md
+    from ai_clip.produce.storyboard_edit import apply_script_md
     from ai_clip.produce.storyboard import write_storyboard_files
 
     pp = _paths(cfg, project)
@@ -439,25 +439,25 @@ def run_assemble(cfg: Config, project: str):
     )
 
 
-def run_pair_review(
+def run_artifact_review(
     cfg: Config,
     project: str,
     artifact: str,
     run_date: str | None = None,
-) -> PairReviewReport:
-    from ai_clip.pair import review_artifact
+) -> ArtifactReviewReport:
+    from ai_clip.artifact_review import review_artifact
 
     return review_artifact(cfg, project, artifact, run_date=run_date)
 
 
-def run_pair_rewrite(
+def run_artifact_rewrite(
     cfg: Config,
     project: str,
     artifact: str,
-    report: PairReviewReport,
+    report: ArtifactReviewReport,
     run_date: str | None = None,
 ) -> Path:
-    from ai_clip.pair.stage import rewrite_reviewed_artifact
+    from ai_clip.artifact_review.stage import rewrite_reviewed_artifact
 
     return rewrite_reviewed_artifact(
         cfg,
@@ -468,13 +468,13 @@ def run_pair_rewrite(
     )
 
 
-def run_pair_verify(
+def run_artifact_verify(
     cfg: Config,
     project: str,
     artifact: str,
     run_date: str | None = None,
-) -> PairReviewReport:
-    from ai_clip.pair.stage import verify_rewritten_artifact
+) -> ArtifactReviewReport:
+    from ai_clip.artifact_review.stage import verify_rewritten_artifact
 
     return verify_rewritten_artifact(cfg, project, artifact, run_date=run_date)
 
@@ -491,71 +491,71 @@ def run_collect(
     return collect_stage(cfg, date, force=force)
 
 
-def run_zack_ranking(
+def run_rank_candidates(
     cfg: Config,
     date: str | None = None,
     top_n: int | None = None,
     workflow: str = "daily-radar",
 ) -> RadarCandidates:
     _require_daily_radar(workflow)
-    from ai_clip.radar import run_zack_ranking as zack_ranking_stage
+    from ai_clip.radar import run_rank_candidates as rank_candidates_stage
 
-    return zack_ranking_stage(cfg, date, top_n)
+    return rank_candidates_stage(cfg, date, top_n)
 
 
-def run_source_content(
+def run_enrich_content(
     cfg: Config,
     date: str | None = None,
     workflow: str = "daily-radar",
 ) -> RadarCandidates:
     _require_daily_radar(workflow)
-    from ai_clip.radar import run_source_content as source_content_stage
+    from ai_clip.radar import run_enrich_content as enrich_content_stage
 
-    return source_content_stage(cfg, date)
+    return enrich_content_stage(cfg, date)
 
 
-def run_content_rerank(
+def run_rerank_candidates(
     cfg: Config,
     date: str | None = None,
     workflow: str = "daily-radar",
 ) -> RadarCandidates:
     _require_daily_radar(workflow)
-    from ai_clip.radar import run_content_rerank as content_rerank_stage
+    from ai_clip.radar import run_rerank_candidates as rerank_candidates_stage
 
-    return content_rerank_stage(cfg, date)
+    return rerank_candidates_stage(cfg, date)
 
 
-def run_zack_selection(
+def run_select_topic(
     cfg: Config,
     date: str | None = None,
     workflow: str = "daily-radar",
-) -> ZackSelection:
+) -> TopicSelection:
     _require_daily_radar(workflow)
-    from ai_clip.radar import run_zack_selection as zack_selection_stage
+    from ai_clip.radar import run_select_topic as select_topic_stage
 
-    return zack_selection_stage(cfg, date)
+    return select_topic_stage(cfg, date)
 
 
-def run_source_research(
+def run_research_evidence(
     cfg: Config,
     date: str | None = None,
     workflow: str = "daily-radar",
-) -> SourceResearchReport:
+) -> EvidenceResearchReport:
     _require_daily_radar(workflow)
-    from ai_clip.radar import run_source_research as source_research_stage
+    from ai_clip.radar import run_research_evidence as research_evidence_stage
 
-    return source_research_stage(cfg, date)
+    return research_evidence_stage(cfg, date)
 
 
-def run_zack_draft(
+def run_draft_script(
     cfg: Config,
     date: str | None = None,
     workflow: str = "daily-radar",
-) -> ZackDraft:
+) -> EditorialDraft:
     _require_daily_radar(workflow)
-    from ai_clip.radar import run_zack_draft as zack_draft_stage
+    from ai_clip.radar import run_draft_script as draft_script_stage
 
-    return zack_draft_stage(cfg, date)
+    return draft_script_stage(cfg, date)
 
 
 def run_daily_radar(

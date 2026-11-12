@@ -2,29 +2,31 @@ from __future__ import annotations
 
 from ai_clip.core.config import LLMConfig
 from ai_clip.core.llm import chat
-from ai_clip.radar.models import RadarCandidates, RadarVideo, ZackSelection
-from ai_clip.zack_draft.prompts import ZACK_DRAFT_SYSTEM, ZACK_DRAFT_USER
-from ai_clip.zack_selection.selector import selection_for_prompt
+from ai_clip.radar.drafting_prompts import EDITORIAL_DRAFT_SYSTEM, EDITORIAL_DRAFT_USER
+from ai_clip.radar.models import RadarCandidates, RadarVideo, TopicSelection
+from ai_clip.radar.selection import selection_for_prompt
 
 
-def generate_zack_draft(
+def generate_editorial_draft(
     candidates: RadarCandidates,
     cfg: LLMConfig,
-    selection: ZackSelection | None = None,
+    selection: TopicSelection | None = None,
     research_markdown: str = "",
+    editorial_profile: str = "default",
 ) -> str:
     videos_text = _videos_for_prompt(candidates.videos)
     selection_text = (
         selection_for_prompt(selection)
         if selection is not None
-        else "(no zack-selection available; choose one main topic from candidates)"
+        else "(no topic selection available; choose one main topic from candidates)"
     )
     research = research_markdown.strip() or "(no source research available)"
     return chat(
         cfg,
-        system=ZACK_DRAFT_SYSTEM,
-        user=ZACK_DRAFT_USER.format(
+        system=EDITORIAL_DRAFT_SYSTEM,
+        user=EDITORIAL_DRAFT_USER.format(
             date=candidates.date,
+            editorial_profile=editorial_profile,
             videos=videos_text,
             selection=selection_text,
             research=research,

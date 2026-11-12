@@ -2,14 +2,14 @@ import httpx
 import pytest
 
 from ai_clip.core import billing
-from ai_clip.core.config import SourceResearchConfig
+from ai_clip.core.config import WebResearchConfig
 from ai_clip.core.retry import (
     ExternalCallError,
     FailureCategory,
     RetryPolicy,
     run_with_retry,
 )
-from ai_clip.source_research import client as research_client
+from ai_clip.web_research import client as research_client
 
 
 def _status_error(status: int) -> httpx.HTTPStatusError:
@@ -139,7 +139,7 @@ def test_tavily_retries_transient_status_and_records_attempts(monkeypatch, tmp_p
     with billing.account(tmp_path, "research"):
         results = research_client.tavily_search(
             "query",
-            SourceResearchConfig(tavily_api_key="key", max_attempts=2),
+            WebResearchConfig(tavily_api_key="key", max_attempts=2),
         )
 
     assert len(results) == 1
@@ -161,10 +161,10 @@ def test_tavily_does_not_retry_invalid_result(monkeypatch):
         )
 
     monkeypatch.setattr(research_client.httpx, "post", fake_post)
-    with pytest.raises(research_client.SourceResearchError) as caught:
+    with pytest.raises(research_client.WebResearchError) as caught:
         research_client.tavily_search(
             "query",
-            SourceResearchConfig(tavily_api_key="key", max_attempts=2),
+            WebResearchConfig(tavily_api_key="key", max_attempts=2),
         )
 
     assert len(calls) == 1

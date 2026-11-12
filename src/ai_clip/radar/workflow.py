@@ -34,9 +34,9 @@ def run_all(
     revised_draft_path = ""
     verification_path = ""
     review_report = None
-    expected_review_path = str(paths.reviews_dir / f"{date}_zack_draft_review.json")
+    expected_review_path = str(paths.draft_review_json)
     expected_revised_path = str(paths.draft_revised_md)
-    expected_verification_path = str(paths.reviews_dir / f"{date}_zack_draft_verify.json")
+    expected_verification_path = str(paths.draft_verification_json)
 
     def workflow_tracker(invocation: StageInvocation):
         return track_stage(paths, invocation.name, dict(invocation.inputs))
@@ -47,34 +47,34 @@ def run_all(
         return StageResult(value=collected)
 
     def ranking_stage():
-        return StageResult(value=radar_stages.run_zack_ranking(cfg, date, top_n))
+        return StageResult(value=radar_stages.run_rank_candidates(cfg, date, top_n))
 
     def content_stage():
-        return StageResult(value=radar_stages.run_source_content(cfg, date))
+        return StageResult(value=radar_stages.run_enrich_content(cfg, date))
 
     def content_rerank_stage():
-        return StageResult(value=radar_stages.run_content_rerank(cfg, date))
+        return StageResult(value=radar_stages.run_rerank_candidates(cfg, date))
 
     def selection_stage():
-        selection = radar_stages.run_zack_selection(cfg, date)
+        selection = radar_stages.run_select_topic(cfg, date)
         if not research:
             searches = automatic_research_searches(selection, cfg)
             if searches:
-                cfg.source_research.max_searches = searches
+                cfg.web_research.max_searches = searches
                 flags["research"] = True
         return StageResult(value=selection)
 
     def research_stage():
-        return StageResult(value=radar_stages.run_source_research(cfg, date))
+        return StageResult(value=radar_stages.run_research_evidence(cfg, date))
 
     def draft_stage():
-        return StageResult(value=radar_stages.run_zack_draft(cfg, date))
+        return StageResult(value=radar_stages.run_draft_script(cfg, date))
 
-    def pair_review_stage():
+    def artifact_review_stage():
         nonlocal review_path, review_report
-        from ai_clip.pair.stage import review_artifact
+        from ai_clip.artifact_review.stage import review_artifact
 
-        review_report = review_artifact(cfg, "radar", "zack_draft", run_date=date)
+        review_report = review_artifact(cfg, "radar", "editorial-draft", run_date=date)
         review_path = expected_review_path
         return StageResult(
             value=review_report,
@@ -85,21 +85,21 @@ def run_all(
             },
         )
 
-    def pair_rewrite_stage():
+    def artifact_rewrite_stage():
         nonlocal revised_draft_path
-        from ai_clip.pair.stage import rewrite_reviewed_artifact
+        from ai_clip.artifact_review.stage import rewrite_reviewed_artifact
 
         if review_report is None:
-            raise RuntimeError("pair-rewrite requires pair-review in the same workflow run")
+            raise RuntimeError("rewrite-artifact requires review-artifact in the same workflow run")
         if review_report.status == "blocked":
             return StageResult(
                 status="skipped",
-                metrics={"reason": "pair-review blocked"},
+                metrics={"reason": "artifact review blocked"},
             )
         revised = rewrite_reviewed_artifact(
             cfg,
             "radar",
-            "zack_draft",
+            "editorial-draft",
             review_report,
             run_date=date,
         )
@@ -109,19 +109,19 @@ def run_all(
             outputs={"revised-draft": revised_draft_path},
         )
 
-    def pair_verify_stage():
+    def artifact_verify_stage():
         nonlocal verification_path
-        from ai_clip.pair.stage import verify_rewritten_artifact
+        from ai_clip.artifact_review.stage import verify_rewritten_artifact
 
         if not revised_draft_path:
             return StageResult(
                 status="skipped",
-                metrics={"reason": "pair-rewrite produced no draft"},
+                metrics={"reason": "artifact rewrite produced no draft"},
             )
         report = verify_rewritten_artifact(
             cfg,
             "radar",
-            "zack_draft",
+            "editorial-draft",
             run_date=date,
         )
         verification_path = expected_verification_path
@@ -141,31 +141,35 @@ def run_all(
             collect_stage,
             {"date": date, "force": str(force_collect)},
         ),
-        "zack-ranking": stage_execution(
-            "zack-ranking",
+        "rank-candidates": stage_execution(
+            "rank-candidates",
             ranking_stage,
             {"date": date, "top_n": str(top_n or cfg.radar.top_n)},
         ),
-        "source-content": stage_execution("source-content", content_stage, {"date": date}),
-        "content-rerank": stage_execution("content-rerank", content_rerank_stage, {"date": date}),
-        "zack-selection": stage_execution("zack-selection", selection_stage, {"date": date}),
-        "source-research": stage_execution("source-research", research_stage, {"date": date}),
-        "zack-draft": stage_execution("zack-draft", draft_stage, {"date": date}),
-        "pair-review": stage_execution(
-            "pair-review",
-            pair_review_stage,
+        "enrich-content": stage_execution("enrich-content", content_stage, {"date": date}),
+        "rerank-candidates": stage_execution(
+            "rerank-candidates",
+            content_rerank_stage,
+            {"date": date},
+        ),
+        "select-topic": stage_execution("select-topic", selection_stage, {"date": date}),
+        "research-evidence": stage_execution("research-evidence", research_stage, {"date": date}),
+        "draft-script": stage_execution("draft-script", draft_stage, {"date": date}),
+        "review-artifact": stage_execution(
+            "review-artifact",
+            artifact_review_stage,
             {"draft": str(paths.draft_md)},
             tracker_factory=workflow_tracker,
         ),
-        "pair-rewrite": stage_execution(
-            "pair-rewrite",
-            pair_rewrite_stage,
+        "rewrite-artifact": stage_execution(
+            "rewrite-artifact",
+            artifact_rewrite_stage,
             {"draft": str(paths.draft_md), "review": expected_review_path},
             tracker_factory=workflow_tracker,
         ),
-        "pair-verify": stage_execution(
-            "pair-verify",
-            pair_verify_stage,
+        "verify-artifact": stage_execution(
+            "verify-artifact",
+            artifact_verify_stage,
             {"revised-draft": expected_revised_path},
             tracker_factory=workflow_tracker,
         ),

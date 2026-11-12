@@ -25,7 +25,7 @@ def run_core_doctor(cfg: Config) -> list[DoctorCheck]:
         _check_import("yt-dlp", "yt_dlp"),
         _check_import("faster-whisper", "faster_whisper"),
         _check_llm_key(cfg),
-        _check_pair_key(cfg),
+        _check_artifact_review_key(cfg),
         _check_tavily_key(cfg),
         _check_mimo_key(cfg),
     ]
@@ -84,18 +84,18 @@ def _check_llm_key(cfg: Config) -> DoctorCheck:
     )
 
 
-def _check_pair_key(cfg: Config) -> DoctorCheck:
-    if cfg.pair.api_key or cfg.pair.deepseek_api_key:
-        return DoctorCheck(name="pair_review_keys", status="pass")
+def _check_artifact_review_key(cfg: Config) -> DoctorCheck:
+    if cfg.artifact_review.api_key or cfg.artifact_review.deepseek_api_key:
+        return DoctorCheck(name="artifact_review_keys", status="pass")
     return DoctorCheck(
-        name="pair_review_keys",
+        name="artifact_review_keys",
         status="warn",
-        hint="set NEWAPP_API_KEY/NEWAPP_URL or DEEPSEEK_API_KEY to use pair-review",
+        hint="set NEWAPP_API_KEY/NEWAPP_URL or DEEPSEEK_API_KEY to review artifacts",
     )
 
 
 def _check_tavily_key(cfg: Config) -> DoctorCheck:
-    if cfg.source_research.tavily_api_key:
+    if cfg.web_research.tavily_api_key:
         return DoctorCheck(name="tavily_key", status="pass")
     return DoctorCheck(
         name="tavily_key",
