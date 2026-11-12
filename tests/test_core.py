@@ -14,7 +14,7 @@ from ai_clip.core.artifacts import (
     write_text_atomic,
 )
 from ai_clip.core.artifact_status import project_artifact_statuses
-from ai_clip.core.config import load_config
+from ai_clip.core.config import Config, load_config
 from ai_clip.core.device import whisper_runtime
 from ai_clip.core.models import Clip, Platform, Shot
 from ai_clip.core.paths import ProjectPaths, read_model, write_model
@@ -272,6 +272,22 @@ def test_config_env_override(tmp_path: Path, monkeypatch):
     assert cfg.web_research.max_searches == 3
 
 
+def test_public_config_section_contract_is_explicit():
+    assert set(Config.model_fields) == {
+        "artifact_review",
+        "aspect_ratio",
+        "assets",
+        "burn_captions",
+        "data_dir",
+        "llm",
+        "produce",
+        "radar",
+        "tts",
+        "web_research",
+        "whisper",
+    }
+
+
 def test_config_rejects_unknown_key(tmp_path: Path):
     config = tmp_path / "config.yaml"
     config.write_text(
@@ -285,6 +301,32 @@ scout:
 
     with pytest.raises(ValueError, match="scout"):
         load_config(config)
+
+
+def test_config_rejects_legacy_sections_with_upgrade_guidance(tmp_path: Path):
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "pair: {}\nsource_research: {}\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        load_config(config)
+
+    message = str(exc_info.value)
+    assert "'pair' -> 'artifact_review'" in message
+    assert "'source_research' -> 'web_research'" in message
+    assert "docs/upgrade-0.2.md" in message
+
+
+def test_config_rejects_legacy_research_environment_with_guidance(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.setenv("AICLIP_SOURCE_RESEARCH_MAX_SEARCHES", "2")
+
+    with pytest.raises(ValueError, match="AICLIP_WEB_RESEARCH_MAX_SEARCHES"):
+        load_config(tmp_path / "missing.yaml")
 
 
 def test_config_rejects_invalid_operational_limits(tmp_path: Path):

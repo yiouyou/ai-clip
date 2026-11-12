@@ -423,6 +423,19 @@ def test_doctor_json_uses_standard_envelope(monkeypatch):
     }
 
 
+def test_migrate_names_reports_data_only_scope(tmp_path):
+    runner = CliRunner()
+    config = tmp_path / "config.yaml"
+    config.write_text(f"data_dir: {tmp_path.as_posix()}\n", encoding="utf-8")
+
+    result = runner.invoke(cli.app, ["migrate-names", "--config", str(config)])
+
+    assert result.exit_code == 0
+    assert "data artifacts and metadata only" in result.output
+    assert "configuration, environment variables" in result.output
+    assert "no legacy names found" in result.output
+
+
 def test_radar_status_command_reads_run_artifacts(tmp_path):
     runner = CliRunner()
     config = tmp_path / "config.yaml"

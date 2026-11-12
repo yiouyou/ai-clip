@@ -66,6 +66,7 @@ models, while the stage and artifact names remain independent of that implementa
 
 | Legacy name | Canonical name |
 |---|---|
+| project `research` command | `source-research` |
 | `zack-ranking` | `rank-candidates` |
 | `source-content` stage | `enrich-content` |
 | `content-rerank` | `rerank-candidates` |
@@ -76,10 +77,18 @@ models, while the stage and artifact names remain independent of that implementa
 | `pair-review` | `review-artifact` |
 | `pair-rewrite` | `rewrite-artifact` |
 | `pair-verify` | `verify-artifact` |
+| `radar-status` | `daily-radar-diagnostics` |
+| `radar-repair` | `daily-radar-repair` |
+| `radar-feedback` | `daily-radar-feedback` |
 | `ZackSelection` | `TopicSelection` |
 | `ZackDraft` | `EditorialDraft` |
 | `pair` config section | `artifact_review` |
 | `source_research` config section | `web_research` |
+| `AICLIP_SOURCE_RESEARCH_MAX_SEARCHES` | `AICLIP_WEB_RESEARCH_MAX_SEARCHES` |
+| `AICLIP_SOURCE_RESEARCH_MAX_RESULTS` | `AICLIP_WEB_RESEARCH_MAX_RESULTS` |
+
+See [the 0.2 upgrade guide](upgrade-0.2.md) for Python imports, agent tools, artifact filenames,
+and the required upgrade sequence.
 
 ## Compatibility policy
 

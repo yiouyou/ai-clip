@@ -9,6 +9,18 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 _DEFAULT_CONFIG = Path(__file__).resolve().parents[3] / "config" / "default.yaml"
+_LEGACY_CONFIG_KEYS = {
+    "pair": "artifact_review",
+    "source_research": "web_research",
+}
+_LEGACY_ENV_VARS = {
+    "AICLIP_SOURCE_RESEARCH_MAX_SEARCHES": "AICLIP_WEB_RESEARCH_MAX_SEARCHES",
+    "AICLIP_SOURCE_RESEARCH_MAX_RESULTS": "AICLIP_WEB_RESEARCH_MAX_RESULTS",
+}
+
+
+class ConfigUpgradeError(ValueError):
+    """Raised when configuration uses a known pre-0.2 name."""
 
 
 class StrictConfigModel(BaseModel):
@@ -228,6 +240,29 @@ def _env_int(value: str, default: int) -> int:
         return default
 
 
+def _reject_legacy_names(raw: dict, source: Path) -> None:
+    config_renames = {
+        name: replacement
+        for name, replacement in _LEGACY_CONFIG_KEYS.items()
+        if name in raw
+    }
+    env_renames = {
+        name: replacement
+        for name, replacement in _LEGACY_ENV_VARS.items()
+        if name in os.environ
+    }
+    if not config_renames and not env_renames:
+        return
+    changes = [
+        *(f"config {name!r} -> {replacement!r}" for name, replacement in config_renames.items()),
+        *(f"environment {name} -> {replacement}" for name, replacement in env_renames.items()),
+    ]
+    raise ConfigUpgradeError(
+        f"legacy ai-clip 0.1 names detected while loading {source}: "
+        f"{'; '.join(changes)}. See docs/upgrade-0.2.md"
+    )
+
+
 def load_dotenv(path: str | Path = ".env") -> None:
     """Minimal .env loader: KEY=VALUE lines, without overriding existing env."""
     p = Path(path)
@@ -260,4 +295,5 @@ def load_config(path: str | Path | None = None) -> Config:
     raw: dict = {}
     if source.exists():
         raw = yaml.safe_load(source.read_text(encoding="utf-8")) or {}
+    _reject_legacy_names(raw, source)
     return _apply_env(Config.model_validate(raw))

@@ -4,7 +4,7 @@ from ai_clip import tools
 from ai_clip.core.config import Config
 
 
-def test_registry_has_all_stages():
+def test_public_tool_name_contract_is_explicit():
     names = {t.name for t in tools.all_tools()}
     assert names == {
         "download",

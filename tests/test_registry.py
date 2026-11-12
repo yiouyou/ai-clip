@@ -1,7 +1,7 @@
 from contextlib import contextmanager
 
 import pytest
-from typer.testing import CliRunner
+from typer.main import get_command
 
 from ai_clip import cli
 from ai_clip.core.stages import (
@@ -170,16 +170,44 @@ def test_tool_registry_is_derived_from_stage_registry():
     assert {tool.name for tool in all_tools()} == expected
 
 
-def test_cli_exposes_registered_stages_and_workflows():
-    result = CliRunner().invoke(cli.app, ["--help"])
-
-    assert result.exit_code == 0
-    for spec in REGISTRY.stages():
-        if spec.cli_exposed:
-            assert spec.name in result.output
-    for spec in REGISTRY.workflows():
-        if spec.cli_exposed:
-            assert spec.name in result.output
+def test_public_cli_command_contract_is_explicit():
+    assert set(get_command(cli.app).commands) == {
+        "analyze",
+        "assemble",
+        "assets",
+        "collect",
+        "cost",
+        "daily-radar",
+        "daily-radar-backfill",
+        "daily-radar-diagnostics",
+        "daily-radar-feedback",
+        "daily-radar-repair",
+        "discover",
+        "doctor",
+        "download",
+        "draft-script",
+        "enrich-content",
+        "export",
+        "extract",
+        "migrate-names",
+        "mpt",
+        "original",
+        "rank-candidates",
+        "remix",
+        "research-evidence",
+        "rerank-candidates",
+        "review-artifact",
+        "run-status",
+        "select-topic",
+        "source-draft",
+        "source-research",
+        "status",
+        "storyboard",
+        "storyboard-edit",
+        "teardown",
+        "transcribe",
+        "voiceover",
+    }
 
 
 def test_daily_radar_compatibility_stage_list_comes_from_registry():

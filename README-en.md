@@ -18,6 +18,8 @@ Detailed docs:
 - [Daily Radar](docs/radar.md)
 - [Artifact Review](docs/artifact-review.md)
 - [Naming conventions](docs/naming.md)
+- [0.2 upgrade guide](docs/upgrade-0.2.md)
+- [Changelog](CHANGELOG.md)
 - [External-call reliability](docs/reliability.md)
 
 ## Principles
@@ -110,7 +112,7 @@ ai-clip daily-radar-feedback accept --date 2026-07-09 --reason "useful angle"
 | `ai-clip assemble -p P` | Assemble final mp4 |
 | `ai-clip doctor` | Diagnose local environment |
 | `ai-clip daily-radar-feedback accept\|reject --date D` | Record explicit topic feedback for ranking calibration |
-| `ai-clip migrate-names` / `--apply` | Preview or apply legacy artifact-name migration without overwriting destinations |
+| `ai-clip migrate-names` / `--apply` | Preview or migrate legacy data artifacts and metadata; does not modify configuration, environment variables, or external scripts |
 | `ai-clip run-status --workflow W -p P --json` | Inspect run stages, artifacts, history, and API usage |
 
 ## Video Formats
@@ -133,7 +135,8 @@ Config loading order:
 3. CLI arguments
 
 YAML configuration is strict: unknown keys and invalid operational limits fail validation instead of
-silently falling back to defaults.
+silently falling back to defaults. Known 0.1 names report their 0.2 replacements; see the
+[0.2 upgrade guide](docs/upgrade-0.2.md) for the complete mapping.
 
 Common environment variables:
 

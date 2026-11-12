@@ -170,13 +170,17 @@ def doctor(
 
 @app.command("migrate-names")
 def migrate_names(
-    apply: bool = typer.Option(False, "--apply", help="apply migration; default is a dry run"),
+    apply: bool = typer.Option(False, "--apply", help="apply data migration; default is a dry run"),
     config: str = typer.Option(None, "--config"),
 ):
-    """Preview or apply the one-time naming migration."""
+    """Preview or migrate legacy artifact files and persisted metadata."""
     from ai_clip.migrations import migrate_artifact_names
 
     results = migrate_artifact_names(_cfg(config).data_dir, apply=apply)
+    console.print(
+        "[dim]Scope: data artifacts and metadata only; configuration, environment variables, "
+        "Python imports, tools, and external scripts are not modified.[/]"
+    )
     if not results:
         console.print("[green]migrate-names[/] no legacy names found")
         return

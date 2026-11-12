@@ -17,6 +17,8 @@ discover -> download -> extract -> analyze -> source-research -> storyboard -> s
 - [Daily Radar 选题流程](docs/radar.md)
 - [Artifact Review](docs/artifact-review.md)
 - [命名规范](docs/naming.md)
+- [0.2 升级指南](docs/upgrade-0.2.md)
+- [变更记录](CHANGELOG.md)
 - [外部调用可靠性](docs/reliability.md)
 
 ## 设计原则
@@ -107,7 +109,7 @@ ai-clip daily-radar-feedback accept --date 2026-07-09 --reason "选题角度合�
 | `ai-clip assemble -p P` | 合成最终 mp4 |
 | `ai-clip doctor` | 本地环境诊断 |
 | `ai-clip daily-radar-feedback accept\|reject --date D` | 记录明确选题反馈，用于后续排序校准 |
-| `ai-clip migrate-names` / `--apply` | 预览或执行旧产物文件名迁移；不覆盖已有目标文件 |
+| `ai-clip migrate-names` / `--apply` | 预览或迁移旧数据产物和 metadata；不修改配置、环境变量或外部脚本 |
 | `ai-clip run-status --workflow W -p P --json` | 查看一次运行的阶段、产物、历史目录和 API 用量 |
 
 ## 视频体裁
@@ -130,7 +132,8 @@ ai-clip daily-radar-feedback accept --date 2026-07-09 --reason "选题角度合�
 3. 命令行参数
 
 YAML 配置使用严格校验：未知字段、负数 Top N、零 worker 等无效值会直接报错，不会静默
-回退到默认配置。
+回退到默认配置。已知的 0.1 配置名会直接提示 0.2 替代项；完整映射见
+[0.2 升级指南](docs/upgrade-0.2.md)。
 
 常用环境变量:
 

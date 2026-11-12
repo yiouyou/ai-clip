@@ -1,6 +1,6 @@
 [project]
 name = "ai-clip"
-version = "0.1.0"
+version = "0.2.0"
 description = "Orchestrator that chains download -> extract -> analyze -> produce for short-video creation and remixing"
 readme = "README.md"
 # Pinned to a modern-but-mature floor: 3.12 is the current stable series (3.13 is
